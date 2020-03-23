@@ -90,55 +90,63 @@ if __name__ == '__main__':
     import time
 
     start_time = time.time()
-    print(start_time)
     # TODO: Remove relative imports
-    full_img_path = './data/original-images/1.jpg'
-    bounded_img_path = './data/original-images/1_found.jpg' 
+    no = 2
+    nos = [12, 14, 15, 18, 19, 1, 20, 21, 22, 24, 25, 26, 27, 2, 4, 5, 7, 8, 9]
+    for no in nos:
+        print(f'no: {no}')
+        full_img_path = f'./data/original-images/{no}.jpg'
+        bounded_img_path = f'./data/original-images/{no}_found.jpg'
 
-    full_img = cv.imread(full_img_path, cv.IMREAD_COLOR)
-    bounded_img = cv.imread(bounded_img_path, cv.IMREAD_COLOR)
+        try:
+            full_img = cv.imread(full_img_path, cv.IMREAD_COLOR)
+            bounded_img = cv.imread(bounded_img_path, cv.IMREAD_COLOR)
+        except Exception:
+            full_img_path[-3:] = 'png'
+            bounded_img_path[-3:] = 'png'
+            full_img = cv.imread(full_img_path, cv.IMREAD_COLOR)
+            bounded_img = cv.imread(bounded_img_path, cv.IMREAD_COLOR)
 
-    print('scaling')
-    # Scale down and true region bounding box
-    new_width = 1000
-    scale = new_width / full_img.shape[1]
-    scaled_shape = (new_width, int(full_img.shape[0] * scale))
-    full_img_scaled = cv.resize(full_img, scaled_shape)
+        print('scaling')
+        # Scale down and true region bounding box
+        new_width = 1000
+        scale = new_width / full_img.shape[1]
+        scaled_shape = (new_width, int(full_img.shape[0] * scale))
+        full_img_scaled = cv.resize(full_img, scaled_shape)
 
-    original_box = find_image_coordinate(full_img, bounded_img)
-    original_box_scaled = BBox(x=int(original_box.x * scale),
-                               y=int(original_box.y * scale),
-                               w=int(original_box.w * scale),
-                               h=int(original_box.h * scale))
+        original_box = find_image_coordinate(full_img, bounded_img)
+        original_box_scaled = BBox(x=int(original_box.x * scale),
+                                   y=int(original_box.y * scale),
+                                   w=int(original_box.w * scale),
+                                   h=int(original_box.h * scale))
 
-    print('regions')
-    # Region Proposals
-    if os.path.lexists('./data/original-images/1_candidates'):
-        with open('./data/original-images/1_candidates', 'rb') as f:
-            candidates = pickle.load(f)
-    else:
-        print(full_img_scaled.shape)
-        candidates = find_candidates(full_img_scaled)
+        print('regions')
+        # Region Proposals
+        if os.path.lexists(f'./data/original-images/{no}_candidates'):
+            with open(f'./data/original-images/{no}_candidates', 'rb') as f:
+                candidates = pickle.load(f)
+        else:
+            candidates = find_candidates(full_img_scaled)
 
-        with open('./data/original-images/1_candidates', 'wb') as f:
-            pickle.dump(candidates, f)
+            with open(f'./data/original-images/{no}_candidates', 'wb') as f:
+                pickle.dump(candidates, f)
 
-    print('IOU')
-    # Visualising Proposed Regions
-    score_threshold = 0.5
-    colour = (0, 0, 225)
-    thickness = 2
+        print('IOU')
+        # Visualising Proposed Regions
+        score_threshold = 0.25
+        colour = (0, 0, 225)
+        thickness = 2
 
-    tp, tn = iou_thresholding(candidates, original_box_scaled, score_threshold)
-    print(len(tp))
-    print(len(tn))
+        tp, tn = iou_thresholding(candidates, original_box_scaled, score_threshold)
+        print('True positives:', len(tp))
+        print('True negatives:', len(tn))
 
-    for bbox in tp:
-        start = (bbox.x, bbox.y)
-        end = (bbox.x + bbox.w, bbox.y + bbox.h)
-        cv.rectangle(full_img_scaled, start, end, colour, thickness)
+        for bbox in tp:
+            start = (bbox.x, bbox.y)
+            end = (bbox.x + bbox.w, bbox.y + bbox.h)
+            cv.rectangle(full_img_scaled, start, end, colour, thickness)
 
-    print(time.time() - start_time)
+        print('Time taken:', time.time() - start_time)
 
-    plt.imshow(full_img_scaled)
-    plt.show()
+        # plt.imshow(full_img_scaled)
+        # plt.show()
