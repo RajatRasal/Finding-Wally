@@ -72,6 +72,22 @@ def find_image_coordinate(full_img, bounded_img):
     x, y = loc[::-1]
     return BBox(x=x[0], y=y[0], w=bounded_img.shape[1], h=bounded_img.shape[0])
 
+def iou_thresholding(candidates, actual, threshold=0.2):
+    true_positives = [actual]
+    true_negatives = []
+
+    for bbox in candidates:
+        score = iou(actual, bbox)
+        if score > score_threshold:
+            true_positives.append(bbox)
+        else:
+            true_negatives.append(bbox)
+
+    print(len(true_positives))
+    print(len(true_negatives))
+
+    return true_positives, true_negatives
+
 
 if __name__ == '__main__':
     # TODO: Remove relative imports
@@ -87,23 +103,16 @@ if __name__ == '__main__':
         with open('./data/original-images/1_candidates', 'rb') as f:
             candidates = pickle.load(f)
 
-        true_positives = [original_box]
-        true_negatives = []
-        score_threshold = 0.2
+        score_threshold = 0.25
         colour = (0, 0, 225)
         thickness = 2
-        for bbox in candidates:
-            score = iou(original_box, bbox)
-            if score > score_threshold:
-                true_positives.append(bbox)
-                start = (bbox.x, bbox.y)
-                end = (bbox.x + bbox.w, bbox.y + bbox.h)
-                cv.rectangle(full_img, start, end, colour, thickness)
-            else:
-                true_negatives.append(bbox)
 
-        print(len(true_positives))
-        print(len(true_negatives))
+        tp, tn = iou_thresholding(candidates, original_box)
+
+        for bbox in tp:
+            start = (bbox.x, bbox.y)
+            end = (bbox.x + bbox.w, bbox.y + bbox.h)
+            cv.rectangle(full_img, start, end, colour, thickness)
 
         plt.imshow(full_img)
         plt.show()
