@@ -29,7 +29,7 @@ def find_candidates(full_img):
     """
     ss = cv.ximgproc.segmentation.createSelectiveSearchSegmentation()
     ss.setBaseImage(full_img)
-    ss.switchToSelectiveSearchFast()
+    ss.switchToSelectiveSearchQuality()
     regions = ss.process()
     
     candidates = set()
@@ -83,46 +83,62 @@ def iou_thresholding(candidates, actual, threshold=0.2):
         else:
             true_negatives.append(bbox)
 
-    print(len(true_positives))
-    print(len(true_negatives))
-
     return true_positives, true_negatives
 
 
 if __name__ == '__main__':
+    import time
+
+    start_time = time.time()
+    print(start_time)
     # TODO: Remove relative imports
     full_img_path = './data/original-images/1.jpg'
     bounded_img_path = './data/original-images/1_found.jpg' 
 
-    full_img = cv.imread(full_img_path, 0)
-    bounded_img = cv.imread(bounded_img_path, 0)
+    full_img = cv.imread(full_img_path, cv.IMREAD_COLOR)
+    bounded_img = cv.imread(bounded_img_path, cv.IMREAD_COLOR)
 
+    print('scaling')
+    # Scale down and true region bounding box
+    new_width = 1000
+    scale = new_width / full_img.shape[1]
+    scaled_shape = (new_width, int(full_img.shape[0] * scale))
+    full_img_scaled = cv.resize(full_img, scaled_shape)
+
+    original_box = find_image_coordinate(full_img, bounded_img)
+    original_box_scaled = BBox(x=int(original_box.x * scale),
+                               y=int(original_box.y * scale),
+                               w=int(original_box.w * scale),
+                               h=int(original_box.h * scale))
+
+    print('regions')
+    # Region Proposals
     if os.path.lexists('./data/original-images/1_candidates'):
-        original_box = find_image_coordinate(full_img, bounded_img)
-
         with open('./data/original-images/1_candidates', 'rb') as f:
             candidates = pickle.load(f)
-
-        score_threshold = 0.25
-        colour = (0, 0, 225)
-        thickness = 2
-
-        tp, tn = iou_thresholding(candidates, original_box)
-
-        for bbox in tp:
-            start = (bbox.x, bbox.y)
-            end = (bbox.x + bbox.w, bbox.y + bbox.h)
-            cv.rectangle(full_img, start, end, colour, thickness)
-
-        plt.imshow(full_img)
-        plt.show()
     else:
-        candidates = find_candidates(full_img)
+        print(full_img_scaled.shape)
+        candidates = find_candidates(full_img_scaled)
 
         with open('./data/original-images/1_candidates', 'wb') as f:
             pickle.dump(candidates, f)
-        
-        plt.imshow(full_img)
-        plt.show()
-        plt.imshow(bounded_img)
-        plt.show()
+
+    print('IOU')
+    # Visualising Proposed Regions
+    score_threshold = 0.5
+    colour = (0, 0, 225)
+    thickness = 2
+
+    tp, tn = iou_thresholding(candidates, original_box_scaled, score_threshold)
+    print(len(tp))
+    print(len(tn))
+
+    for bbox in tp:
+        start = (bbox.x, bbox.y)
+        end = (bbox.x + bbox.w, bbox.y + bbox.h)
+        cv.rectangle(full_img_scaled, start, end, colour, thickness)
+
+    print(time.time() - start_time)
+
+    plt.imshow(full_img_scaled)
+    plt.show()
