@@ -42,6 +42,9 @@ def find_candidates(full_img):
     return list(candidates)
 
 def iou(a, b):
+    """
+    Intersection over Union = (a ⋂ b) / (a ⋃ b)
+    """
     width = None
     if b.x <= a.x <= b.x + b.w:
         width = min(a.w, b.w - (a.x - b.x)) 
@@ -63,23 +66,49 @@ def iou(a, b):
 
     return intersection / union
 
+def find_image_coordinate(full_img, bounded_img):
+    res = cv.matchTemplate(full_img, bounded_img, cv.TM_CCOEFF_NORMED)
+    loc = np.where(res >= 0.9)
+    x, y = loc[::-1]
+    return BBox(x=x[0], y=y[0], w=bounded_img.shape[1], h=bounded_img.shape[0])
+
 
 if __name__ == '__main__':
     # TODO: Remove relative imports
     full_img_path = './data/original-images/1.jpg'
     bounded_img_path = './data/original-images/1_found.jpg' 
 
+    full_img = cv.imread(full_img_path, 0)
+    bounded_img = cv.imread(bounded_img_path, 0)
+
     if os.path.lexists('./data/original-images/1_candidates'):
+        original_box = find_image_coordinate(full_img, bounded_img)
+
         with open('./data/original-images/1_candidates', 'rb') as f:
             candidates = pickle.load(f)
-            print(candidates[:10])
+
+        true_positives = [original_box]
+        true_negatives = []
+        score_threshold = 0.2
+        colour = (0, 0, 225)
+        thickness = 2
+        for bbox in candidates:
+            score = iou(original_box, bbox)
+            if score > score_threshold:
+                true_positives.append(bbox)
+                start = (bbox.x, bbox.y)
+                end = (bbox.x + bbox.w, bbox.y + bbox.h)
+                cv.rectangle(full_img, start, end, colour, thickness)
+            else:
+                true_negatives.append(bbox)
+
+        print(len(true_positives))
+        print(len(true_negatives))
+
+        plt.imshow(full_img)
+        plt.show()
     else:
-        full_img = np.array(Image.open(full_img_path))
-        bounded_img = Image.open(bounded_img_path)
-        
         candidates = find_candidates(full_img)
-        print(len(candidates))
-        print(candidates[:10])
 
         with open('./data/original-images/1_candidates', 'wb') as f:
             pickle.dump(candidates, f)
