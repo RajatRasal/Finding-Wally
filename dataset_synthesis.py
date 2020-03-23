@@ -73,7 +73,7 @@ def find_image_coordinate(full_img, bounded_img):
     return BBox(x=x[0], y=y[0], w=bounded_img.shape[1], h=bounded_img.shape[0])
 
 def iou_thresholding(candidates, actual, threshold=0.2):
-    true_positives = [actual]
+    true_positives = []
     true_negatives = []
 
     for bbox in candidates:
