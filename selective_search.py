@@ -23,6 +23,12 @@ cv.setNumThreads(4)
 BBox = namedtuple('BBox', 'x y w h')
 
 
+def scale_image_in_aspect_ratio(full_img, scale_width):
+    scale = scale_width / full_img.shape[1]
+    scaled_shape = (scale_width, int(full_img.shape[0] * scale))
+    full_img_scaled = cv.resize(full_img, scaled_shape)
+    return full_img_scaled
+
 def find_candidates(full_img):
     """
     Apply segmented search to the input image to find a set of bounding
@@ -108,7 +114,8 @@ if __name__ == '__main__':
     start_time = time.time()
 
     # Region not centralised
-    data = pd.DataFrame(columns=['actual', 'region_nc', 'fg', 'tx', 'ty', 'w', 'h'])
+    columns = ['actual', 'x', 'y', 'w', 'h', 'fg', 't_x', 't_y', 't_w', 't_h']
+    data = pd.DataFrame(columns=columns)
 
     no = 2
     nos = [12, 14, 15, 18, 19, 1, 20, 21, 22, 24, 25, 26, 27, 2, 4, 5, 7, 8, 9]
@@ -131,8 +138,11 @@ if __name__ == '__main__':
         # Scale down and true region bounding box
         new_width = 1000
         scale = new_width / full_img.shape[1]
+        """
         scaled_shape = (new_width, int(full_img.shape[0] * scale))
         full_img_scaled = cv.resize(full_img, scaled_shape)
+        """
+        full_img_scaled = scale_image_in_aspect_ratio(full_img, new_width)
 
         original_box = find_image_coordinate(full_img, bounded_img)
         original_box_scaled = BBox(x=int(original_box.x * scale),
@@ -200,8 +210,10 @@ if __name__ == '__main__':
             cv.rectangle(full_img_scaled, start_new, end_new, (0, 0, 0), thickness)
             break
             """
-            data = data.append({'actual': no, 'region_nc': bbox, 'fg': 1, 'tx': t_x,
-                                'ty': t_y, 'w': t_w, 'h': t_h}, ignore_index=True)
+            data = data.append({'actual': no, 'x': bbox.x, 'y': bbox.y, 
+                                'w': bbox.w, 'h': bbox.h, 'fg': 1, 't_x': t_x,
+                                't_y': t_y, 't_w': t_w, 't_h': t_h},
+                               ignore_index=True)
 
         # plt.imshow(full_img_scaled)
         # plt.show()
@@ -209,7 +221,9 @@ if __name__ == '__main__':
         # print(data.head())
 
         for bbox in tp2 + tn:
-            data = data.append({'actual': no, 'region_nc': bbox, 'fg': 0}, ignore_index=True)
+            data = data.append({'actual': no, 'x': bbox.x, 'y': bbox.y, 
+                                'w': bbox.w, 'h': bbox.h, 'fg': 0},
+                               ignore_index=True)
 
         print(data.shape)
 
