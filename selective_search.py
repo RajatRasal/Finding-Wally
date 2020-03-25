@@ -8,17 +8,19 @@ If expected result already exists in output dest then don't do anything.
 """
 import os
 import cloudpickle as pickle
+import random
 from collections import namedtuple
 
 from PIL import Image
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import cv2 as cv
 
 cv.setUseOptimized(True)
 cv.setNumThreads(4)
 
-BBox = namedtuple('BBox', 'x y w h') 
+BBox = namedtuple('BBox', 'x y w h')
 
 
 def find_candidates(full_img):
@@ -85,14 +87,31 @@ def iou_thresholding(candidates, actual, threshold=0.2):
 
     return true_positives, true_negatives
 
+def calculate_offsets(actual, proposal):
+    t_x = actual.x - proposal.x / proposal.x
+    t_y = actual.y - proposal.y / proposal.y
+    w = np.log(proposal.w / actual.w)
+    h = np.log(proposal.h / actual.h)
+    return (t_x, t_y, w, h)
+
+def center_bbox(bbox):
+    return BBox(bbox.x + bbox.w // 2, bbox.y + bbox.h // 2, bbox.w, bbox.h)
+
+def apply_offset(bbox, t_x, t_y, t_w, t_h):
+    return BBox(t_x, t_y, bbox.w + bbox.w * t_w, bbox.h + bbox.h * t_h)
+
 
 if __name__ == '__main__':
+    # TODO: Remove relative imports
     import time
 
     start_time = time.time()
-    # TODO: Remove relative imports
+
+    data = pd.DataFrame(columns=['actual', 'region', 'fg', 'offset'])
+
     no = 2
     nos = [12, 14, 15, 18, 19, 1, 20, 21, 22, 24, 25, 26, 27, 2, 4, 5, 7, 8, 9]
+
     for no in nos:
         print(f'no: {no}')
         full_img_path = f'./data/original-images/{no}.jpg'
@@ -135,18 +154,52 @@ if __name__ == '__main__':
         # Visualising Proposed Regions
         score_threshold = 0.25
         colour = (0, 0, 225)
-        thickness = 2
+        thickness = 10
 
         tp, tn = iou_thresholding(candidates, original_box_scaled, score_threshold)
         print('True positives:', len(tp))
         print('True negatives:', len(tn))
 
+        random.shuffle(tn)
+        tn_proposals = tn[:len(tp) * 3]
+
+        center_original_bbox = center_bbox(original_box_scaled)
+        start = (center_original_bbox.x - center_original_bbox.w // 2,
+                 center_original_bbox.y - center_original_bbox.h // 2)
+        end = (center_original_bbox.x + center_original_bbox.w // 2,
+               center_original_bbox.y + center_original_bbox.h // 2)
+        cv.rectangle(full_img_scaled, start, end, colour, thickness)
+        print(f'center box: {center_original_bbox}')
+
+        for bbox in tp:
+            # Plot Proposed Region
+            center_bbox = center_bbox(bbox)
+            cv.rectangle(full_img_scaled, (bbox.x, bbox.y),
+                         (bbox.x + bbox.w, bbox.y + bbox.h), (0, 255, 255), thickness)
+            print(f'TP Center BBOX: {center_bbox}')
+
+            # Plot Proposed Region + Offset
+            t_x, t_y, t_w, t_h = calculate_offsets(center_original_bbox, center_bbox)
+            shifted_bbox = apply_offset(center_bbox, t_x, t_y, t_w, t_h)
+            start_new = (int(shifted_bbox.x - shifted_bbox.w // 2),
+                         int(shifted_bbox.y - shifted_bbox.h // 2))
+            end_new = (int(shifted_bbox.x + shifted_bbox.w // 2),
+                       int(shifted_bbox.y + shifted_bbox.h // 2))
+            cv.rectangle(full_img_scaled, start_new, end_new, (0, 0, 0), thickness)
+            break
+
+        plt.imshow(full_img_scaled)
+        plt.show()
+
+        break
+        """
+            data.append({'actual': no, 'region': proposal,
+                         'fg': 1, 'offset': }, ignore_index=True)
+
         for bbox in tp:
             start = (bbox.x, bbox.y)
             end = (bbox.x + bbox.w, bbox.y + bbox.h)
             cv.rectangle(full_img_scaled, start, end, colour, thickness)
+        """
 
         print('Time taken:', time.time() - start_time)
-
-        # plt.imshow(full_img_scaled)
-        # plt.show()
