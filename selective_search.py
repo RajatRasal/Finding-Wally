@@ -74,13 +74,13 @@ def find_image_coordinate(full_img, bounded_img):
     x, y = loc[::-1]
     return BBox(x=x[0], y=y[0], w=bounded_img.shape[1], h=bounded_img.shape[0])
 
-def iou_thresholding(candidates, actual, threshold=0.2):
+def iou_thresholding(candidates, actual, lower=0.2, upper=1):
     true_positives = []
     true_negatives = []
 
     for bbox in candidates:
         score = iou(actual, bbox)
-        if score > score_threshold:
+        if upper >= score > lower:
             true_positives.append(bbox)
         else:
             true_negatives.append(bbox)
@@ -107,7 +107,8 @@ if __name__ == '__main__':
 
     start_time = time.time()
 
-    data = pd.DataFrame(columns=['actual', 'region', 'fg', 'offset'])
+    # Region not centralised
+    data = pd.DataFrame(columns=['actual', 'region_nc', 'fg', 'tx', 'ty', 'w', 'h'])
 
     no = 2
     nos = [12, 14, 15, 18, 19, 1, 20, 21, 22, 24, 25, 26, 27, 2, 4, 5, 7, 8, 9]
@@ -152,54 +153,71 @@ if __name__ == '__main__':
 
         print('IOU')
         # Visualising Proposed Regions
-        score_threshold = 0.25
-        colour = (0, 0, 225)
-        thickness = 10
+        # colour = (0, 0, 225)
+        # thickness = 10
 
-        tp, tn = iou_thresholding(candidates, original_box_scaled, score_threshold)
+        lower = 0.4
+        lower2 = 0.1
+        tp, _ = iou_thresholding(candidates, original_box_scaled, lower, 1)
+        tp2, tn = iou_thresholding(candidates, original_box_scaled, lower2, lower)
+        """
         print('True positives:', len(tp))
+        print('Slightly True positives:', len(tp2))
         print('True negatives:', len(tn))
+        """
 
+        random.shuffle(tp2)
         random.shuffle(tn)
-        tn_proposals = tn[:len(tp) * 3]
+
+        tp2 = tp2[:max(50, int(len(tp) * 3))]
+        tn = tn[:max(50, int(len(tp) * 1))]
 
         center_original_bbox = center_bbox(original_box_scaled)
         start = (center_original_bbox.x - center_original_bbox.w // 2,
                  center_original_bbox.y - center_original_bbox.h // 2)
         end = (center_original_bbox.x + center_original_bbox.w // 2,
                center_original_bbox.y + center_original_bbox.h // 2)
-        cv.rectangle(full_img_scaled, start, end, colour, thickness)
+        # cv.rectangle(full_img_scaled, start, end, colour, thickness)
         print(f'center box: {center_original_bbox}')
 
         for bbox in tp:
             # Plot Proposed Region
-            center_bbox = center_bbox(bbox)
+            centered_bbox = center_bbox(bbox)
+            """
             cv.rectangle(full_img_scaled, (bbox.x, bbox.y),
                          (bbox.x + bbox.w, bbox.y + bbox.h), (0, 255, 255), thickness)
-            print(f'TP Center BBOX: {center_bbox}')
+            print(f'TP Center BBOX: {centered_bbox}')
+            """
 
             # Plot Proposed Region + Offset
-            t_x, t_y, t_w, t_h = calculate_offsets(center_original_bbox, center_bbox)
-            shifted_bbox = apply_offset(center_bbox, t_x, t_y, t_w, t_h)
+            t_x, t_y, t_w, t_h = calculate_offsets(center_original_bbox, centered_bbox)
+            """
+            shifted_bbox = apply_offset(centered_bbox, t_x, t_y, t_w, t_h)
             start_new = (int(shifted_bbox.x - shifted_bbox.w // 2),
                          int(shifted_bbox.y - shifted_bbox.h // 2))
             end_new = (int(shifted_bbox.x + shifted_bbox.w // 2),
                        int(shifted_bbox.y + shifted_bbox.h // 2))
             cv.rectangle(full_img_scaled, start_new, end_new, (0, 0, 0), thickness)
             break
+            """
+            data = data.append({'actual': no, 'region_nc': bbox, 'fg': 1, 'tx': t_x,
+                                'ty': t_y, 'w': t_w, 'h': t_h}, ignore_index=True)
 
-        plt.imshow(full_img_scaled)
-        plt.show()
+        # plt.imshow(full_img_scaled)
+        # plt.show()
 
-        break
+        # print(data.head())
+
+        for bbox in tp2 + tn:
+            data = data.append({'actual': no, 'region_nc': bbox, 'fg': 0}, ignore_index=True)
+
+        print(data.shape)
+
+        # break
         """
-            data.append({'actual': no, 'region': proposal,
-                         'fg': 1, 'offset': }, ignore_index=True)
-
-        for bbox in tp:
-            start = (bbox.x, bbox.y)
-            end = (bbox.x + bbox.w, bbox.y + bbox.h)
-            cv.rectangle(full_img_scaled, start, end, colour, thickness)
-        """
-
         print('Time taken:', time.time() - start_time)
+        """
+
+    print('No of Foreground images:', data.fg.sum())
+
+    data.to_csv('./data/data.csv')
