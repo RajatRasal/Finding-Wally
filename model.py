@@ -1,11 +1,13 @@
 import cv2 as cv
 import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import keras.backend as kb
 from keras.layers import Dense
-from keras import Model
+from keras import Model, losses
 from keras.optimizers import Adam
 from keras.preprocessing.image import ImageDataGenerator
 from keras.applications.vgg16 import VGG16
-import pandas as pd
 
 from selective_search import scale_image_in_aspect_ratio
 
@@ -31,32 +33,48 @@ model = Model(inputs=vgg.input, outputs=[reg, cls])
 # print(model.summary())
 
 def multitask_reg_cls_loss(y_true, y_pred):
-    print(y_true, y_pred)
-    return 1
+    reg_pred = y_pred[0]
+    cls_pred = y_pred[1]
+    reg_true = y_true[0]
+    cls_true = y_true[1]
+
+    loss = kb.mean(losses.binary_crossentropy(cls_true, cls_pred) + \
+                   cls_true * losses.mse(reg_true, reg_pred))
+    return loss
 
 optimizer = Adam(lr=0.0001)
-# model.compile(loss=multitask_reg_cls_loss, optimizer=optimizer, metrics=["accuracy"])
+model.compile(loss=multitask_reg_cls_loss, optimizer=optimizer, metrics=["accuracy"])
 
 if __name__ == '__main__':
     from selective_search import BBox
 
     new_width = 1000
 
-    data = pd.read_csv('./data/data.csv', index_col=0)
-    # data.astype('int32')
-    sample = data.head(1)
+    data = pd.read_csv('./data/data.csv')
+    X = np.zeros((data.shape[0], 224, 224, 3))
+    y = [np.zeros((data.shape[0], 4)), np.zeros((data.shape[0], 1))]
 
-    # print(sample)
+    for i, row in data.head().iterrows():
+        print(row["actual"])
+        full_img = cv.imread(f'./data/original-images/{int(row.actual)}.jpg')
+        full_img_scaled = scale_image_in_aspect_ratio(full_img, 1000)
+        proposal = full_img_scaled[int(row.y):int(row.y+row.h), int(row.x):int(row.x+row.w)]
+        proposal = cv.resize(proposal, (224, 224))
+        X[i] = proposal
 
-    full_img = cv.imread(f'./data/original-images/12.jpg')
-    full_img_scaled = scale_image_in_aspect_ratio(full_img, 1000)
-    # print(sample.y, sample.y+sample.h, sample.x, sample.x+sample.w)
-    proposal = full_img_scaled[int(sample.y):int(sample.y+sample.h),
-                               int(sample.x):int(sample.x+sample.w)]
-    proposal = cv.resize(proposal, (224, 224))
-    x = model.predict(proposal.reshape((1, *proposal.shape)))
-    print(x)
+        y[0][i, 0] = row.t_x
+        y[0][i, 1] = row.t_y
+        y[0][i, 2] = row.t_w
+        y[0][i, 3] = row.t_h
+        y[1][i, 0] = row.fg
+
+    # X[0] = proposal
+    # X[1] = proposal
+
+    model.fit(x=X, y=y)
     # print(sample.dtypes)
 
     # print(data.head())
     # model.predict(
+    """
+    """
