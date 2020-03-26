@@ -1,4 +1,5 @@
 import cv2 as cv
+import cloudpickle as pickle
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -46,16 +47,17 @@ optimizer = Adam(lr=0.0001)
 model.compile(loss=multitask_reg_cls_loss, optimizer=optimizer, metrics=["accuracy"])
 
 if __name__ == '__main__':
-    from selective_search import BBox
-
     new_width = 1000
 
     data = pd.read_csv('./data/data.csv')
+    # data = data.sample(frac=1).reset_index(drop=True)
+
     X = np.zeros((data.shape[0], 224, 224, 3))
     y = [np.zeros((data.shape[0], 4)), np.zeros((data.shape[0], 1))]
 
-    for i, row in data.head().iterrows():
-        print(row["actual"])
+    for i, row in data.iterrows():
+        if i % 100 == 0:
+            print(i)
         full_img = cv.imread(f'./data/original-images/{int(row.actual)}.jpg')
         full_img_scaled = scale_image_in_aspect_ratio(full_img, 1000)
         proposal = full_img_scaled[int(row.y):int(row.y+row.h), int(row.x):int(row.x+row.w)]
@@ -68,13 +70,21 @@ if __name__ == '__main__':
         y[0][i, 3] = row.t_h
         y[1][i, 0] = row.fg
 
-    # X[0] = proposal
-    # X[1] = proposal
+    with open('./x.pkl', 'wb') as f:
+        pickle.dump(X, f)
 
-    model.fit(x=X, y=y)
-    # print(sample.dtypes)
+    with open('./y.pkl', 'wb') as f:
+        pickle.dump(y, f)
 
-    # print(data.head())
-    # model.predict(
-    """
-    """
+    train_set = int(data.shape[0] * 0.9)
+
+    history = model.fit(x=X[:train_set], y=[y[0][:train_set], y[1][:train_set]], epoch=1,
+                        shuffle=True, use_multiprocessing=True, workers=7, verbose=1)
+
+    result = model.predict(x[train_set:])
+    with open('./result.pkl', 'wb') as f:
+        pickle.dump(result, f)
+
+    from sklearn.metrics import classification_report
+
+    print(classification_report(y[1][train_set:], result[1]))
