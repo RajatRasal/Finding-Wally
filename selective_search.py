@@ -94,17 +94,18 @@ def iou_thresholding(candidates, actual, lower=0.2, upper=1):
     return true_positives, true_negatives
 
 def calculate_offsets(actual, proposal):
-    t_x = actual.x - proposal.x / proposal.x
-    t_y = actual.y - proposal.y / proposal.y
-    w = np.log(proposal.w / actual.w)
-    h = np.log(proposal.h / actual.h)
-    return (t_x, t_y, w, h)
+    t_x = (actual.x - proposal.x) / proposal.x
+    t_y = (actual.y - proposal.y) / proposal.y
+    t_w = np.log2(actual.w / proposal.w)
+    t_h = np.log2(actual.h / proposal.h)
+    return (t_x, t_y, t_w, t_h)
 
 def center_bbox(bbox):
     return BBox(bbox.x + bbox.w // 2, bbox.y + bbox.h // 2, bbox.w, bbox.h)
 
-def apply_offset(bbox, t_x, t_y, t_w, t_h):
-    return BBox(t_x, t_y, bbox.w + bbox.w * t_w, bbox.h + bbox.h * t_h)
+def apply_offset(centered_bbox, t_x, t_y, t_w, t_h):
+    return BBox(centered_bbox.x + t_x, centered_bbox.y + t_y, 
+                int(centered_bbox.w * t_w), int(centered_bbox.h * t_h))
 
 
 if __name__ == '__main__':
@@ -183,10 +184,10 @@ if __name__ == '__main__':
         tn = tn[:max(50, int(len(tp) * 1))]
 
         center_original_bbox = center_bbox(original_box_scaled)
-        start = (center_original_bbox.x - center_original_bbox.w // 2,
-                 center_original_bbox.y - center_original_bbox.h // 2)
-        end = (center_original_bbox.x + center_original_bbox.w // 2,
-               center_original_bbox.y + center_original_bbox.h // 2)
+        # start = (center_original_bbox.x - center_original_bbox.w // 2,
+        #          center_original_bbox.y - center_original_bbox.h // 2)
+        # end = (center_original_bbox.x + center_original_bbox.w // 2,
+        #        center_original_bbox.y + center_original_bbox.h // 2)
         # cv.rectangle(full_img_scaled, start, end, colour, thickness)
         print(f'center box: {center_original_bbox}')
 
@@ -201,8 +202,9 @@ if __name__ == '__main__':
 
             # Plot Proposed Region + Offset
             t_x, t_y, t_w, t_h = calculate_offsets(center_original_bbox, centered_bbox)
-            """
+            # print(t_x, t_y, t_w, t_h)
             shifted_bbox = apply_offset(centered_bbox, t_x, t_y, t_w, t_h)
+            """
             start_new = (int(shifted_bbox.x - shifted_bbox.w // 2),
                          int(shifted_bbox.y - shifted_bbox.h // 2))
             end_new = (int(shifted_bbox.x + shifted_bbox.w // 2),
@@ -222,13 +224,14 @@ if __name__ == '__main__':
 
         for bbox in tp2 + tn:
             data = data.append({'actual': no, 'x': bbox.x, 'y': bbox.y, 
-                                'w': bbox.w, 'h': bbox.h, 'fg': 0},
+                                'w': bbox.w, 'h': bbox.h, 'fg': 0, 't_x': None,
+                                't_y': None, 't_w': None, 't_h': None},
                                ignore_index=True)
 
-        print(data.shape)
+        # print(data.shape)
 
-        # break
         """
+        break
         print('Time taken:', time.time() - start_time)
         """
 
