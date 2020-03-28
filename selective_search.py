@@ -164,11 +164,26 @@ if __name__ == '__main__':
 
         print('IOU')
         # Visualising Proposed Regions
-        # colour = (0, 0, 225)
-        # thickness = 10
+        colour = (0, 0, 225)
+        thickness = 1
 
-        lower = 0.4
-        lower2 = 0.1
+        # Filter out very large or small candidate images
+        print('Proposals:', len(candidates))
+        candidates2 = []
+        for proposal in candidates:
+            if (0.5 * original_box.w < proposal.w < 2 * original_box.w) and \
+               (0.5 * original_box.h < proposal.h < 2 * original_box.h):
+                candidates2.append(proposal)
+        print('After Proposals:', len(candidates2))
+        candidates = candidates2
+        """
+        candidates = []
+        for proposal in candidates:
+            if proposal.width 
+        """
+
+        lower = 0.5
+        lower2 = 0.3
         tp, _ = iou_thresholding(candidates, original_box_scaled, lower, 1)
         tp2, tn = iou_thresholding(candidates, original_box_scaled, lower2, lower)
         """
@@ -194,23 +209,23 @@ if __name__ == '__main__':
         for bbox in tp:
             # Plot Proposed Region
             centered_bbox = center_bbox(bbox)
-            """
             cv.rectangle(full_img_scaled, (bbox.x, bbox.y),
                          (bbox.x + bbox.w, bbox.y + bbox.h), (0, 255, 255), thickness)
             print(f'TP Center BBOX: {centered_bbox}')
+            """
             """
 
             # Plot Proposed Region + Offset
             t_x, t_y, t_w, t_h = calculate_offsets(center_original_bbox, centered_bbox)
             # print(t_x, t_y, t_w, t_h)
             shifted_bbox = apply_offset(centered_bbox, t_x, t_y, t_w, t_h)
-            """
             start_new = (int(shifted_bbox.x - shifted_bbox.w // 2),
                          int(shifted_bbox.y - shifted_bbox.h // 2))
             end_new = (int(shifted_bbox.x + shifted_bbox.w // 2),
                        int(shifted_bbox.y + shifted_bbox.h // 2))
             cv.rectangle(full_img_scaled, start_new, end_new, (0, 0, 0), thickness)
-            break
+            # break
+            """
             """
             data = data.append({'actual': no, 'x': bbox.x, 'y': bbox.y, 
                                 'w': bbox.w, 'h': bbox.h, 'fg': 1, 't_x': t_x,
@@ -230,11 +245,12 @@ if __name__ == '__main__':
 
         # print(data.shape)
 
-        """
-        break
+        # break
         print('Time taken:', time.time() - start_time)
+        """
         """
 
     print('No of Foreground images:', data.fg.sum())
+    print('Total Proposals:', data.shape)
 
     data.to_csv('./data/data.csv')
