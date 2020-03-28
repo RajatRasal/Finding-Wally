@@ -6,8 +6,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import keras.backend as kb
-from keras.layers import Dense
 from keras import Model, losses
+from keras.layers import Dense
+from keras.regularizers import l1
 from keras.optimizers import Adam, SGD
 from keras.preprocessing.image import ImageDataGenerator
 from keras.applications.vgg16 import VGG16
@@ -23,8 +24,9 @@ for layers in (vgg.layers):
 # VGG Backbone - output from convolutional layers
 backbone = vgg.layers[-4].output
 # Attach my own FC layers on top of VGG backbone
-fc = Dense(500, activation='relu', name='my_fc1')(backbone)
-fc = Dense(128, activation='relu', name='my_fc2')(fc)
+fc = Dense(300, activation='relu', name='my_fc1', 
+           activity_regularizer=l1(0.001))(backbone)
+# fc = Dense(128, activation='relu', name='my_fc2')(fc)
 
 # Loss function for bounding box regression
 # reg = Dense(4, activation='linear', name='bbox_reg')(fc)
@@ -32,7 +34,8 @@ fc = Dense(128, activation='relu', name='my_fc2')(fc)
 cls = Dense(1, activation='sigmoid', name='fg_cls')(fc)
 
 # Combine backbone and my outputs to form the NN pipeline
-model = Model(inputs=vgg.input, outputs=[cls])
+# model = Model(inputs=vgg.input, outputs=[cls])
+model = Model(inputs=vgg.input, outputs=cls)
 # print(model.summary())
 
 def multitask_reg_cls_loss(y_true, y_pred):
@@ -63,9 +66,24 @@ def recall_m(y_true, y_pred):
     recall = true_positives / (possible_positives + kb.epsilon())
     return recall
 
-optimizer = SGD(lr=0.0001)
+def precision_m(y_true, y_pred):
+    true_positives = kb.sum(kb.round(kb.clip(y_true * y_pred, 0, 1)))
+    predicted_positives = kb.sum(kb.round(kb.clip(y_pred, 0, 1)))
+    precision = true_positives / (predicted_positives + kb.epsilon())
+    return precision
+
+def f1_m(y_true, y_pred):
+    precision = precision_m(y_true, y_pred)
+    recall = recall_m(y_true, y_pred)
+    return 2*((precision*recall)/(precision+recall+kb.epsilon()))
+
+
+optimizer = SGD(lr=0.00001)
+"""
 model.compile(loss=multitask_reg_cls_loss, optimizer=optimizer,
               metrics=["accuracy", recall_m])
+"""
+model.compile(loss='binary_crossentropy', optimizer=optimizer, metrics=[f1_m])
 
 
 if __name__ == '__main__':
@@ -109,31 +127,30 @@ if __name__ == '__main__':
 
     from collections import Counter
 
-    train_set = 2000  # int(data.shape[0] * 0.9)
+    train_set = int(0.8 * data.shape[0])
 
     print('Train:', Counter(y[1][:train_set].flatten()))
     _true = y[1][train_set:]
-    _true[_true >= .5] = 1
-    _true[_true < .5] = 0
     print('Test:', Counter(list(_true.flatten())))
 
     # history = model.fit(x=X[:train_set], y=[y[0][:train_set], y[1][:train_set]],
-    history = model.fit(x=X[:train_set], y=[y[1][:train_set]],
-                        epochs=3, shuffle=True, use_multiprocessing=True,
-                        workers=5, verbose=1, validation_split=0.1, batch_size=100)
+    history = model.fit(x=X[:train_set], y=y[1][:train_set],
+                        class_weight={0: 0.1, 1: 0.9}, batch_size=50,
+                        epochs=10, shuffle=True, use_multiprocessing=True,
+                        workers=6, verbose=1, validation_split=0.1)
 
-    """
     # result = model.predict(X[train_set:])
     print('-------------------------')
     print('PRED')
     test_set = 200
-    """
     result = model.predict(X[train_set:])
     with open('./result.pkl', 'wb') as f:
         pickle.dump(result, f)
-    result[result >= .5] = 1
-    result[result < .5] = 0
+    cls_threshold = 0.5
+    result[result >= cls_threshold] = 1
+    result[result < cls_threshold] = 0
 
-    from sklearn.metrics import classification_report
+    from sklearn.metrics import classification_report, confusion_matrix
     print(Counter(list(result.flatten())))
     print(classification_report(_true.flatten(), result.astype('int32').flatten()))
+    print(confusion_matrix(_true.flatten(), result.astype('int32').flatten()))
