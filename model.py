@@ -8,7 +8,7 @@ import pandas as pd
 import tensorflow as tf
 import tensorflow.keras.backend as kb
 from tensorflow.keras import Model, losses
-from tensorflow.keras.layers import Dense
+from tensorflow.keras.layers import Dense, Dropout
 from tensorflow.keras.regularizers import l1
 from tensorflow.keras.optimizers import Adam, SGD
 from tensorflow.keras.callbacks import EarlyStopping
@@ -32,15 +32,17 @@ def build_model():
     backbone = vgg.layers[-4].output
     # Attach my own FC layers on top of VGG backbone
     # 300
-    fc = Dense(300, activation='relu', name='my_fc1', 
-               activity_regularizer=l1(0.001))(backbone)
-    fc = Dense(100, activation='relu', name='my_fc2',
-               activity_regularizer=l1(0.001))(fc)
+    fc1 = Dense(300, activation='relu', name='my_fc1', 
+                activity_regularizer=l1(0.001))(backbone)
+    do1 = Dropout(0.5, seed=41)(fc1)
+    fc2 = Dense(100, activation='relu', name='my_fc2',
+                activity_regularizer=l1(0.001))(do1)
+    do1 = Dropout(0.5, seed=41)(fc2)
     
     # Loss function for bounding box regression
     # reg = Dense(4, activation='linear', name='bbox_reg')(fc)
     # Loss function for foreground/background classification
-    cls = Dense(1, activation='tanh', name='fg_cls')(fc)
+    cls = Dense(1, activation='tanh', name='fg_cls')(do1)
     
     # Combine backbone and my outputs to form the NN pipeline
     # model = Model(inputs=vgg.input, outputs=[cls])
@@ -98,6 +100,7 @@ if __name__ == '__main__':
 
     data = pd.read_csv('./data/data.csv')
     # data = data.sample(frac=1).reset_index(drop=True)
+    print(f'SHAPE: {data.shape} ------------------------')
 
     X = np.zeros((data.shape[0], 224, 224, 3))
     y = [np.zeros((data.shape[0], 4)), np.zeros((data.shape[0], 1))]
@@ -145,9 +148,11 @@ if __name__ == '__main__':
                        restore_best_weights=True)
     optimizer = Adam(lr=0.00001)
 
-    datagen = ImageDataGenerator()
+    datagen = ImageDataGenerator(validation_split=0.1)
 
     kfold = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+    batch_size = 32
+    epochs = 20
     cvscores = []
     for train, test in kfold.split(X, y[1]):
         # Compile the model
@@ -163,15 +168,18 @@ if __name__ == '__main__':
         class_weight = Counter(y_train.flatten())
         zeros = class_weight[1] / y_train.shape[0]
         ones = class_weight[0] / y_train.shape[0]
-        history = model.fit_generator(datagen.flow(x_train, y_train, batch_size=50),
-                steps_per_epoch=y_train.shape[0] / 50,
-                            class_weight={0: zeros, 1: ones}, epochs=5, shuffle=True, 
-                            use_multiprocessing=True, workers=-1, verbose=1) 
+        history = model.fit(x_train, y_train, batch_size=batch_size,
+                            steps_per_epoch=y_train.shape[0] / batch_size,
+                            class_weight={0: zeros, 1: ones}, epochs=epochs,
+                            shuffle=True, use_multiprocessing=True, workers=-1,
+                            verbose=0) 
         # validation_split=0.1, callbacks=[es])
         # Evaluate the model
         # scores = model.evaluate(datagen.flow(x_train, y_train, batch_size=y_train.shape[0]), verbose=0)
-        pred = model.predict_generator(datagen.flow(x_test))  # y[1][test], verbose=0)
-        cls_threshold = 0.5
+        pred = model.predict(x_test)  # y[1][test], verbose=0)
+        # TODO: Store all the images which are predicted 1s
+        # TODO: Store all the 1s which are predicted 0s - FN
+        cls_threshold = 0.6
         pred[pred >= cls_threshold] = 1
         pred[pred < cls_threshold] = 0
         print(confusion_matrix(y[1][test].flatten(), pred.flatten()))
