@@ -1,5 +1,3 @@
-import os
-
 import cv2 as cv
 import cloudpickle as pickle
 import matplotlib.pyplot as plt
@@ -10,18 +8,8 @@ import tensorflow.keras.backend as kb
 from tensorflow.keras import Model, losses
 from tensorflow.keras.layers import Dense, Dropout
 from tensorflow.keras.regularizers import l1
-from tensorflow.keras.optimizers import Adam, SGD
-from tensorflow.keras.callbacks import EarlyStopping
-from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras.applications.vgg16 import VGG16
-from sklearn.model_selection import StratifiedKFold
-from sklearn.metrics import classification_report, confusion_matrix
-from sklearn.metrics import f1_score as f1_score_sk
 
-from selective_search import scale_image_in_aspect_ratio
-
-
-print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
 
 def build_model():
     vgg = VGG16(weights='imagenet', include_top=True)
@@ -88,121 +76,3 @@ def f1_score(y_true, y_pred):
     _precision = precision(y_true, y_pred)
     _recall = recall(y_true, y_pred)
     return 2 * ((_precision * _recall) / (_precision + _recall + kb.epsilon()))
-
-"""
-model.compile(loss=multitask_reg_cls_loss, optimizer=optimizer,
-              metrics=["accuracy", recall_m])
-"""
-
-
-if __name__ == '__main__':
-    new_width = 1000
-
-    data = pd.read_csv('./data/data.csv')
-    # data = data.sample(frac=1).reset_index(drop=True)
-    print(f'SHAPE: {data.shape} ------------------------')
-
-    X = np.zeros((data.shape[0], 224, 224, 3))
-    y = [np.zeros((data.shape[0], 4)), np.zeros((data.shape[0], 1))]
-
-    if os.path.lexists('./x.pkl'):
-        print('Loading Data')
-        with open('./x.pkl', 'rb') as f:
-            X = pickle.load(f)
-        with open('./y.pkl', 'rb') as f:
-            y = pickle.load(f)
-    else:
-        print('Generating Data')
-        for i, row in data.iterrows():
-            if i % 100 == 0:
-                print(i)
-            full_img = cv.imread(f'./data/original-images/{int(row.actual)}.jpg')
-            full_img_scaled = scale_image_in_aspect_ratio(full_img, 1000)
-            proposal = full_img_scaled[int(row.y):int(row.y+row.h),
-                                       int(row.x):int(row.x+row.w)]
-            proposal = cv.resize(proposal, (224, 224))
-            X[i] = proposal
-
-            y[0][i, 0] = row.t_x
-            y[0][i, 1] = row.t_y
-            y[0][i, 2] = row.t_w
-            y[0][i, 3] = row.t_h
-            y[1][i, 0] = row.fg
-
-        with open('./x.pkl', 'wb') as f:
-            pickle.dump(X, f)
-
-        with open('./y.pkl', 'wb') as f:
-            pickle.dump(y, f)
-
-    from collections import Counter
-
-    # train_set = int(0.8 * data.shape[0])
-
-    # print('Train:', Counter(y[1][:train_set].flatten()))
-    # _true = y[1][train_set:]
-    # print('Test:', Counter(list(_true.flatten())))
-
-    # history = model.fit(x=X[:train_set], y=[y[0][:train_set], y[1][:train_set]],
-    es = EarlyStopping(monitor='val_f1_score', min_delta=0.1, patience=10, mode='max',
-                       restore_best_weights=True)
-    optimizer = Adam(lr=0.00001)
-
-    datagen = ImageDataGenerator(validation_split=0.1)
-
-    kfold = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-    batch_size = 32
-    epochs = 20
-    cvscores = []
-    for train, test in kfold.split(X, y[1]):
-        # Compile the model
-        model = build_model()
-        model.compile(loss='binary_crossentropy', optimizer=optimizer, metrics=[f1_score])
-        # Preprocess Input
-        x_train = X[train]
-        y_train = y[1][train]
-        datagen.fit(x_train)
-        x_test = X[test]
-        y_test = y[1][test]
-        # Fit the model
-        class_weight = Counter(y_train.flatten())
-        zeros = class_weight[1] / y_train.shape[0]
-        ones = class_weight[0] / y_train.shape[0]
-        history = model.fit(x_train, y_train, batch_size=batch_size,
-                            steps_per_epoch=y_train.shape[0] / batch_size,
-                            class_weight={0: zeros, 1: ones}, epochs=epochs,
-                            shuffle=True, use_multiprocessing=True, workers=-1,
-                            verbose=0) 
-        # validation_split=0.1, callbacks=[es])
-        # Evaluate the model
-        # scores = model.evaluate(datagen.flow(x_train, y_train, batch_size=y_train.shape[0]), verbose=0)
-        pred = model.predict(x_test)  # y[1][test], verbose=0)
-        # TODO: Store all the images which are predicted 1s
-        # TODO: Store all the 1s which are predicted 0s - FN
-        cls_threshold = 0.6
-        pred[pred >= cls_threshold] = 1
-        pred[pred < cls_threshold] = 0
-        print(confusion_matrix(y[1][test].flatten(), pred.flatten()))
-        score = f1_score_sk(y[1][test].flatten(), pred.flatten())
-        print("%s: %.2f%%" % ('f1 score', score * 100))
-        cvscores.append(score * 100)
-        print("%.2f%% (+/- %.2f%%)" % (np.mean(cvscores), np.std(cvscores)))
-
-    print(cvscores)
-    # result = model.predict(X[train_set:])
-    """
-    print('-------------------------')
-    print('PRED')
-    test_set = 200
-    result = model.predict(X[train_set:])
-    with open('./result.pkl', 'wb') as f:
-        pickle.dump(result, f)
-    cls_threshold = 0.5
-    result[result >= cls_threshold] = 1
-    result[result < cls_threshold] = 0
-
-    from sklearn.metrics import classification_report, confusion_matrix
-    print(Counter(list(result.flatten())))
-    print(classification_report(_true.flatten(), result.astype('int32').flatten()))
-    print(confusion_matrix(_true.flatten(), result.astype('int32').flatten()))
-    """
