@@ -111,6 +111,7 @@ def apply_offset(centered_bbox, t_x, t_y, t_w, t_h):
 if __name__ == '__main__':
     # TODO: Remove relative imports
     import time
+    import re
 
     start_time = time.time()
 
@@ -118,8 +119,15 @@ if __name__ == '__main__':
     columns = ['actual', 'x', 'y', 'w', 'h', 'fg', 't_x', 't_y', 't_w', 't_h']
     data = pd.DataFrame(columns=columns)
 
-    no = 2
-    nos = [12, 14, 15, 18, 19, 1, 20, 21, 22, 24, 25, 26, 27, 2, 4, 5, 7, 8, 9]
+    # nos = [12, 14, 15, 18, 19, 1, 20, 21, 22, 24, 25, 26, 27, 2, 4, 5, 7, 8, 9]
+    nos = []
+
+    pattern = re.compile(r'(\d{1,2})(\_found.jpg)')
+    for img in os.listdir('./data/original-images/'):
+        match = pattern.search(img)
+        if match: nos.append(int(match.group(1)))
+
+    print(f'Numbers found: {nos}')
 
     for no in nos:
         print(f'no: {no}')
@@ -171,8 +179,8 @@ if __name__ == '__main__':
         print('Proposals:', len(candidates))
         candidates2 = []
         for proposal in candidates:
-            if (0.5 * original_box.w < proposal.w < 2 * original_box.w) and \
-               (0.5 * original_box.h < proposal.h < 2 * original_box.h):
+            if (0.5 * original_box.w < proposal.w < 4 * original_box.w) and \
+               (0.5 * original_box.h < proposal.h < 4 * original_box.h):
                 candidates2.append(proposal)
         print('After Proposals:', len(candidates2))
         candidates = candidates2
@@ -182,8 +190,8 @@ if __name__ == '__main__':
             if proposal.width 
         """
 
-        lower = 0.5
-        lower2 = 0.3
+        lower = 0.4
+        lower2 = 0.2
         tp, _ = iou_thresholding(candidates, original_box_scaled, lower, 1)
         tp2, tn = iou_thresholding(candidates, original_box_scaled, lower2, lower)
         """
@@ -204,14 +212,15 @@ if __name__ == '__main__':
         # end = (center_original_bbox.x + center_original_bbox.w // 2,
         #        center_original_bbox.y + center_original_bbox.h // 2)
         # cv.rectangle(full_img_scaled, start, end, colour, thickness)
-        print(f'center box: {center_original_bbox}')
+        # print(f'center box: {center_original_bbox}')
+        print(f'tp: {len(tp)}')
 
         for bbox in tp:
             # Plot Proposed Region
             centered_bbox = center_bbox(bbox)
             cv.rectangle(full_img_scaled, (bbox.x, bbox.y),
                          (bbox.x + bbox.w, bbox.y + bbox.h), (0, 255, 255), thickness)
-            print(f'TP Center BBOX: {centered_bbox}')
+            # print(f'TP Center BBOX: {centered_bbox}')
             """
             """
 
