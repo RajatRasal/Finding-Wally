@@ -23,7 +23,7 @@ cv.setNumThreads(4)
 BBox = namedtuple('BBox', 'x y w h')
 
 
-def scale_image_in_aspect_ratio(full_img, scale_width):
+def scale_image_in_aspect_ratio(full_img, scale_width=1000):
     scale = scale_width / full_img.shape[1]
     scaled_shape = (scale_width, int(full_img.shape[0] * scale))
     full_img_scaled = cv.resize(full_img, scaled_shape)
@@ -179,8 +179,8 @@ if __name__ == '__main__':
         print('Proposals:', len(candidates))
         candidates2 = []
         for proposal in candidates:
-            if (0.5 * original_box.w < proposal.w < 4 * original_box.w) and \
-               (0.5 * original_box.h < proposal.h < 4 * original_box.h):
+            if (0.5 * original_box.w < proposal.w < 2 * original_box.w) and \
+               (0.5 * original_box.h < proposal.h < 2 * original_box.h):
                 candidates2.append(proposal)
         print('After Proposals:', len(candidates2))
         candidates = candidates2
@@ -203,8 +203,8 @@ if __name__ == '__main__':
         random.shuffle(tp2)
         random.shuffle(tn)
 
-        tp2 = tp2[:max(50, int(len(tp) * 3))]
-        tn = tn[:max(50, int(len(tp) * 1))]
+        tp2 = tp2[:max(50, int(len(tp) * 2))]
+        tn = tn[:max(50, int(len(tp) * 2))]
 
         center_original_bbox = center_bbox(original_box_scaled)
         # start = (center_original_bbox.x - center_original_bbox.w // 2,
@@ -255,9 +255,7 @@ if __name__ == '__main__':
         # print(data.shape)
 
         # break
-        print('Time taken:', time.time() - start_time)
-        """
-        """
+        # print('Time taken:', time.time() - start_time)
 
     print('No of Foreground images:', data.fg.sum())
     print('Total Proposals:', data.shape)
