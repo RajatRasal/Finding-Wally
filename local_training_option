@@ -1,0 +1,1 @@
+python3 train.py -f x_train.pkl y_train.pkl x_test.pkl y_test.pkl
