@@ -6,19 +6,21 @@ import socket
 import time
 
 from tensorflow import keras
+import numpy as np
+
 import resnet
 
 
-worker = ["146.169.53.220:2223", "146.169.53.219:2222"]
+worker = ['146.169.53.220:2223', '146.169.53.219:2222', '146.169.53.226:2221']  # '146.169.53.207:2220']
 ip = socket.gethostbyname(socket.gethostname())
 index = list(map(lambda x: x.split(':')[0], worker)).index(ip)
 # model = distributed_train_model(x_train/255, y_train, build_model, workers, index, Adam(lr=0.00001))
 
-os.environ['TF_CONFIG'] = json.dumps({"cluster": {"worker": worker}, "task": {"index": index, "type": "worker"}})
+os.environ['TF_CONFIG'] = json.dumps({'cluster': {'worker': worker}, 'task': {'index': index, 'type': 'worker'}})
 # strategy = tf.distribute.experimental.MultiWorkerMirroredStrategy()
 strategy = tf.compat.v1.distribute.experimental.MultiWorkerMirroredStrategy()
 
-NUM_GPUS = 2
+NUM_GPUS = 3  # len(worker)
 BS_PER_GPU = 128 
 NUM_EPOCHS = 2
 
@@ -68,28 +70,35 @@ batch_in_1_epoch = x.shape[0] // (BS_PER_GPU * NUM_GPUS)
 print('Batches in 1 epoch:', batch_in_1_epoch)
 # print('Steps per epoch:', ((x.shape[0] - rem) * NUM_EPOCHS) / )
 
-with strategy.scope():
-    start = time.time()
-    train_dataset = tf.data.Dataset.from_tensor_slices((x, y))
-    test_dataset = tf.data.Dataset.from_tensor_slices((x_test, y_test))
-    
-    tf.random.set_seed(22)
-    train_dataset = train_dataset.map(augmentation) \
-            .map(normalize) \
-            .shuffle(x.shape[0]) \
-            .batch(BS_PER_GPU * NUM_GPUS, drop_remainder=True) \
-            .repeat(NUM_EPOCHS) \
-            .cache() \
-            .prefetch(5 * BS_PER_GPU * NUM_GPUS)
-    test_dataset = test_dataset.map(normalize) \
-            .batch(BS_PER_GPU * NUM_GPUS, drop_remainder=True)
-    
-    input_shape = (HEIGHT, WIDTH, NUM_CHANNELS)
-    img_input = tf.keras.layers.Input(shape=input_shape)
-    opt = keras.optimizers.SGD(learning_rate=0.1, momentum=0.9)
-    
-    # model = tf.keras.applications.MobileNetV2(input_shape=IMG_SHAPE, include_top=False, weights='imagenet')
-    model = resnet.resnet56(img_input=img_input, classes=NUM_CLASSES)
-    model.compile(optimizer=opt, loss='sparse_categorical_crossentropy', metrics=['sparse_categorical_accuracy']) 
-    model.fit(train_dataset, steps_per_epoch=x.shape[0] // (BS_PER_GPU * NUM_GPUS), epochs=NUM_EPOCHS)
-    print('Time Taken:', time.time() - start)
+times = []
+
+for _ in range(1):
+    with strategy.scope():
+        start = time.time()
+        train_dataset = tf.data.Dataset.from_tensor_slices((x, y))
+        test_dataset = tf.data.Dataset.from_tensor_slices((x_test, y_test))
+        
+        tf.random.set_seed(22)
+        train_dataset = train_dataset.map(augmentation) \
+                .map(normalize) \
+                .shuffle(x.shape[0]) \
+                .batch(BS_PER_GPU * NUM_GPUS, drop_remainder=True) \
+                .repeat(NUM_EPOCHS) \
+                .cache() \
+                .prefetch(5 * BS_PER_GPU * NUM_GPUS)
+        test_dataset = test_dataset.map(normalize) \
+                .batch(BS_PER_GPU * NUM_GPUS, drop_remainder=True)
+        
+        input_shape = (HEIGHT, WIDTH, NUM_CHANNELS)
+        img_input = tf.keras.layers.Input(shape=input_shape)
+        opt = keras.optimizers.SGD(learning_rate=0.1, momentum=0.9)
+        
+        # model = tf.keras.applications.MobileNetV2(input_shape=IMG_SHAPE, include_top=False, weights='imagenet')
+        model = resnet.resnet56(img_input=img_input, classes=NUM_CLASSES)
+        model.compile(optimizer=opt, loss='sparse_categorical_crossentropy', metrics=['sparse_categorical_accuracy']) 
+        model.fit(train_dataset, steps_per_epoch=x.shape[0] // (BS_PER_GPU * NUM_GPUS), epochs=NUM_EPOCHS)
+        # print('Time Taken:', time.time() - start)
+        times.append(time.time() - start)
+        print(np.mean(times))
+
+print('MEAN TIME:', np.mean(times))
