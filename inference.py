@@ -5,6 +5,8 @@ import tensorflow as tf
 from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.metrics import f1_score as f1_score_sk
 
+from model import f1_score
+
 
 def get_data(x_train, y_train, x_test, y_test):
 
@@ -44,8 +46,9 @@ x_train_file, y_train_file, x_test_file, y_test_file = args.file
 saved_model_path = args.model[0]
 
 # TODO: Change this to load_weights
-restored_model = tf.keras.models.load_model(saved_model_path, compile=False)
-restored_model.compile(optimizer='adam', loss='binary_crossentropy')
+restored_model = tf.keras.models.load_model(saved_model_path, compile=True,
+        custom_objects={'f1_score': f1_score})
+# restored_model.compile(optimizer='adam', loss='binary_crossentropy')
 
 x_train = pickle.load(x_train_file).astype('float16')
 x_test = pickle.load(x_test_file).astype('float16')

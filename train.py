@@ -15,7 +15,7 @@ from tensorflow.keras.optimizers import Adam, SGD
 from model import f1_score, build_model
 
 
-strategy = tf.compat.v1.distribute.experimental.MultiWorkerMirroredStrategy()
+# strategy = tf.distribute.experimental.MultiWorkerMirroredStrategy()
 
 def train_model(X, y, model, optimizer, random_state=42,
                 keras_metrics=[f1_score], epochs=100, batch_size=32):
@@ -73,7 +73,7 @@ def distributed_train_model(X, y, model_builder, workers, index, optimizer,
                   epochs=epochs, class_weight={0: zeros, 1: ones}, verbose=1)
         return model
 
-def get_data(x_train, y_train, x_test, y_test):
+def get_data(x_train, y_train, x_test, y_test, epochs=2):
 
     def scale(image, label):
         image = tf.cast(image, tf.float16)
@@ -84,13 +84,13 @@ def get_data(x_train, y_train, x_test, y_test):
     BS_PER_GPU = 64
     NUM_GPUS = 2
 
-    tf.random.seed(42)
+    tf.random.set_seed(42)
     train_dataset = tf.data.Dataset.from_tensor_slices((x_train, y_train)) \
         .map(scale) \
         .shuffle(x_train.shape[0]) \
         .batch(BS_PER_GPU * NUM_GPUS, drop_remainder=True) \
+        .repeat(epochs) \
         .cache()
-        # .repeat(epochs) \
     test_dataset = tf.data.Dataset.from_tensor_slices((x_test, y_test)) \
         .map(scale) \
         .shuffle(x_test.shape[0]) \
@@ -99,7 +99,7 @@ def get_data(x_train, y_train, x_test, y_test):
 
     return train_dataset, test_dataset
 
-def build_distributed_model():
+def build_distributed_model(strategy):
     with strategy.scope():
         model = build_model()
         model.compile(loss='binary_crossentropy',
@@ -137,22 +137,22 @@ print('Y test counter:', Counter(list(y_test.flatten())))
 
 if dist_config_file:
     print('------------------ Distributed Training ------------------')
-    dist_config = json.loads(dist_config_file.read())
-    print(dist_config)
+    # dist_config = json.loads(dist_config_file.read())
     ip = socket.gethostbyname(socket.gethostname())
-    index = list(map(lambda x: x.split(':')[0], dist_config['worker'])).index(ip)
-    workers = dist_config['worker']
+    # workers = dist_config['worker']
+    workers = ['146.169.53.225:2223', '146.169.53.207:2222']
+    index = list(map(lambda x: x.split(':')[0], workers)).index(ip)
+    print(workers)
 
     os.environ['TF_CONFIG'] = json.dumps({
         'cluster': {'worker': workers},
         'task': {'type': 'worker', 'index': index}
     })
+    strategy = tf.compat.v1.distribute.experimental.MultiWorkerMirroredStrategy()
 
-    # opt = SGD(learning_rate=0.1, momentum=0.9)
-    # batch_size = 64
-
-    train_dataset, test_dataset = get_data(x_train, y_train, x_test, y_test)
-    model = build_distributed_model()
+    epochs = 2
+    train_dataset, test_dataset = get_data(x_train, y_train, x_test, y_test, epochs)
+    model = build_distributed_model(strategy)
 
     """
     opt = Adam(lr=0.00001)
@@ -163,21 +163,24 @@ if dist_config_file:
     class_weight = Counter(y_train.flatten())
     zeros = class_weight[1] / y_train.shape[0]
     ones = class_weight[0] / y_train.shape[0]
-    model.fit(train_dataset, epochs=2, class_weight={0: zeros, 1: ones}, verbose=1)
+    BS_PER_GPU = 64
+    NUM_GPUS = 2
+    spe = x_train.shape[0] // (BS_PER_GPU * NUM_GPUS)
+    model.fit(train_dataset, steps_per_epoch=spe, class_weight={0: zeros, 1: ones}, verbose=1)
 
     saved_model_path = '/tmp/keras_save'
     model.save(saved_model_path)
 
+    """
     # steps_per_epoch=x.shape[0] // (BS_PER_GPU * NUM_GPUS),
-    """
     result = predict(test_dataset, model, threshold=0.6)
-    """
 
-    """
     test_dataset = tf.data.Dataset.from_tensor_slices((x_test, y_test)) \
             .map(scale) \
             .batch(batch_size * len(workers), drop_remainder=True)
+    """
 
+    """
     tf_x_test = test_dataset.map(lambda image, label: image)
     tf_y_test = test_dataset.map(lambda image, label: label)
     threshold = 0.6
