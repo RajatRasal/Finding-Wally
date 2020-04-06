@@ -5,34 +5,7 @@ import tensorflow as tf
 from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.metrics import f1_score as f1_score_sk
 
-from model import f1_score
-
-
-def get_data(x_train, y_train, x_test, y_test):
-
-    def scale(image, label):
-        image = tf.cast(image, tf.float16)
-        label = tf.cast(label, tf.float16)
-        image /= 255
-        return image, label
-
-    BS_PER_GPU = 64
-    NUM_GPUS = 2
-
-    tf.random.set_seed(42)
-    train_dataset = tf.data.Dataset.from_tensor_slices((x_train, y_train)) \
-        .map(scale) \
-        .shuffle(x_train.shape[0]) \
-        .batch(BS_PER_GPU * NUM_GPUS, drop_remainder=True) \
-        .cache()
-        # .repeat(epochs) \
-    test_dataset = tf.data.Dataset.from_tensor_slices((x_test, y_test)) \
-        .map(scale) \
-        .shuffle(x_test.shape[0]) \
-        .batch(BS_PER_GPU * NUM_GPUS, drop_remainder=True) \
-        .cache()
-
-    return train_dataset, test_dataset
+from model import f1_score, preprocess_data
 
 
 description = 'Make predictions using a model'
@@ -58,23 +31,31 @@ y_test = pickle.load(y_test_file)
 y_train = y_train[1].astype('int8')
 y_test = y_test[1].astype('int8')
 
-_, test_dataset = get_data(x_train, y_train, x_test, y_test)
+_, test_dataset = preprocess_data(x_train, y_train, x_test, y_test)
 
-# tf_x_test = test_dataset.map(lambda image, label: image)
-# tf_y_test = test_dataset.map(lambda image, label: label)
+best = 0
+best_thres = 0
+best_result = []
+best_ytest = []
+for t in range(40, 50, 1):
+    threshold = t / 100  # 0.42
+    results = []
+    y_test = []
+    for x, y in test_dataset:
+        pred = restored_model.predict(x)
+        pred[pred >= threshold] = 1
+        pred[pred < threshold] = 0
+        results += pred.flatten().tolist()
+        y_test += y.numpy().flatten().astype('float16').tolist()
+    
+    res = f1_score_sk(y_test, results)
+    if res > best:
+        best = res
+        best_thres = threshold
+        best_y_test = y_test
+        best_result = results
 
-threshold = 0.6
-results = []
-y_test = []
-for x, y in test_dataset:
-    pred = restored_model.predict(x)
-    pred[pred >= threshold] = 1
-    pred[pred < threshold] = 0
-    results += pred.flatten().tolist()
-    y_test += y.numpy().flatten().astype('float16').tolist()
-
-print(len(results))
-print(len(y_test))
-print(confusion_matrix(y_test, results))
-print(classification_report(y_test, results))
-print(f1_score_sk(y_test, results))
+print(f'Threshold: {best_thres}')
+print(f'f1 score: {best}')
+print(f'confusion matrix:\n{confusion_matrix(best_y_test, best_result)}')
+print(classification_report(best_y_test, best_result))

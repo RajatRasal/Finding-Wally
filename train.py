@@ -12,10 +12,8 @@ from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.metrics import f1_score as f1_score_sk
 from tensorflow.keras.optimizers import Adam, SGD
 
-from model import f1_score, build_model
+from model import f1_score, build_model, preprocess_data
 
-
-# strategy = tf.distribute.experimental.MultiWorkerMirroredStrategy()
 
 def train_model(X, y, model, optimizer, random_state=42,
                 keras_metrics=[f1_score], epochs=100, batch_size=32):
@@ -34,73 +32,6 @@ def train_model(X, y, model, optimizer, random_state=42,
                         use_multiprocessing=True, workers=-1, verbose=1)
 
     return model
-
-def scale(image, label):
-    image = tf.cast(image, tf.float16)
-    # = tf.image.per_image_standardization(x)
-    #        return x, y
-    image /= 255
-    return image, label
-
-def distributed_train_model(X, y, model_builder, workers, index, optimizer,
-        random_state=42, keras_metrics=[f1_score], epochs=2, batch_size=32):
-    os.environ['TF_CONFIG'] = json.dumps({
-        'cluster': {'worker': workers},
-        'task': {'type': 'worker', 'index': index}
-    })
-
-    NUM_GPUS = len(workers)
-    BS_PER_GPU = batch_size
-
-    # multiworker_strategy = tf.distribute.experimental.MultiWorkerMirroredStrategy()
-    strategy = tf.compat.v1.distribute.experimental.MultiWorkerMirroredStrategy()
-    with strategy.scope():
-        model = model_builder()
-        print(X.shape)
-        print(y.shape)
-        dataset = tf.data.Dataset.from_tensor_slices((X, y)) \
-            .map(scale) \
-            .shuffle(X.shape[0]) \
-            .batch(BS_PER_GPU * NUM_GPUS, drop_remainder=True) \
-            .repeat(epochs) \
-            .cache() \
-            .prefetch(2 * BS_PER_GPU * NUM_GPUS)
-        class_weight = Counter(y.flatten())
-        zeros = class_weight[1] / y_train.shape[0]
-        ones = class_weight[0] / y_train.shape[0]
-        model.compile(loss='binary_crossentropy', optimizer=optimizer, metrics=keras_metrics)
-        model.fit(dataset, steps_per_epoch=X.shape[0] // (BS_PER_GPU * NUM_GPUS),
-                  epochs=epochs, class_weight={0: zeros, 1: ones}, verbose=1)
-        return model
-
-def get_data(x_train, y_train, x_test, y_test, epochs=2, gpus=2, bs=64):
-
-    def scale(image, label):
-        image = tf.cast(image, tf.float16)
-        label = tf.cast(label, tf.float16)
-        image /= 255
-        return image, label
-
-    BS_PER_GPU = bs
-    NUM_GPUS = gpus
-
-    # batch_size = x_train.shape[0] // (BS_PER_GPU * NUM_GPUS)
-    # total = batch_size * epochs
-
-    tf.random.set_seed(42)
-    train_dataset = tf.data.Dataset.from_tensor_slices((x_train, y_train)) \
-        .map(scale) \
-        .shuffle(x_train.shape[0]) \
-        .batch(BS_PER_GPU * NUM_GPUS, drop_remainder=True) \
-        .cache()
-    #    .repeat(epochs) \
-    test_dataset = tf.data.Dataset.from_tensor_slices((x_test, y_test)) \
-        .map(scale) \
-        .shuffle(x_test.shape[0]) \
-        .batch(BS_PER_GPU * NUM_GPUS, drop_remainder=True) \
-        .cache()
-
-    return train_dataset, test_dataset
 
 def build_distributed_model(strategy):
     with strategy.scope():
@@ -156,8 +87,7 @@ if dist_config_file:
     epochs = 50
     BS_PER_GPU = 64
     NUM_GPUS = len(workers)
-    train_dataset, test_dataset = get_data(x_train, y_train, x_test, y_test,
-                                           epochs=epochs, gpus=NUM_GPUS, bs=BS_PER_GPU)
+    train_dataset, test_dataset = preprocess_data(x_train, y_train, x_test, y_test, NUM_GPUS, BS_PER_GPU)
     model = build_distributed_model(strategy)
 
     class_weight = Counter(y_train.flatten())
@@ -173,7 +103,7 @@ else:
     model = build_model()
     print('***************** Local training *****************')
     # model = train_model(x_train/255, y_train, model, Adam(lr=0.00001), epochs=3, batch_size=200)
-    model = train_model(x_train/255, y_train, model, Adam(lr=0.00001), epochs=2, batch_size=128)
+    model = train_model(x_train, y_train, model, Adam(lr=0.00001), epochs=2, batch_size=128)
     
     result_in_sample = predict(x_train/255, model, threshold=0.6)
     result_out_sample = predict(x_test/255, model, threshold=0.6)

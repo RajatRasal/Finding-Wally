@@ -1,5 +1,5 @@
-import cv2 as cv
 import cloudpickle as pickle
+import cv2 as cv
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -10,6 +10,37 @@ from tensorflow.keras.layers import Dense, Dropout
 from tensorflow.keras.regularizers import l1
 from tensorflow.keras.applications.vgg16 import VGG16
 
+
+def preprocess_data(x_train, y_train, x_test, y_test, processors=2, batch_size_per_processor=64):
+
+    def scale(image, label):
+        image = tf.cast(image, tf.float16)
+        label = tf.cast(label, tf.float16)
+        # image /= 255
+        return image, label
+
+    def normalize(image, label):
+        # image = tf.image.per_image_standardization(image)
+        return image, label
+
+    batch_size = processors * batch_size_per_processor 
+
+    tf.random.set_seed(42)
+
+    train_dataset = tf.data.Dataset.from_tensor_slices((x_train, y_train)) \
+        .map(scale) \
+        .map(normalize) \
+        .shuffle(x_train.shape[0]) \
+        .batch(batch_size, drop_remainder=True) \
+        .cache()
+    test_dataset = tf.data.Dataset.from_tensor_slices((x_test, y_test)) \
+        .map(scale) \
+        .map(normalize) \
+        .shuffle(x_test.shape[0]) \
+        .batch(batch_size, drop_remainder=True) \
+        .cache()
+
+    return train_dataset, test_dataset
 
 def build_model():
     vgg = VGG16(weights='imagenet', include_top=True)
