@@ -73,7 +73,7 @@ def distributed_train_model(X, y, model_builder, workers, index, optimizer,
                   epochs=epochs, class_weight={0: zeros, 1: ones}, verbose=1)
         return model
 
-def get_data(x_train, y_train, x_test, y_test, epochs=2):
+def get_data(x_train, y_train, x_test, y_test, epochs=2, gpus=2, bs=64):
 
     def scale(image, label):
         image = tf.cast(image, tf.float16)
@@ -81,16 +81,19 @@ def get_data(x_train, y_train, x_test, y_test, epochs=2):
         image /= 255
         return image, label
 
-    BS_PER_GPU = 64
-    NUM_GPUS = 2
+    BS_PER_GPU = bs
+    NUM_GPUS = gpus
+
+    # batch_size = x_train.shape[0] // (BS_PER_GPU * NUM_GPUS)
+    # total = batch_size * epochs
 
     tf.random.set_seed(42)
     train_dataset = tf.data.Dataset.from_tensor_slices((x_train, y_train)) \
         .map(scale) \
         .shuffle(x_train.shape[0]) \
         .batch(BS_PER_GPU * NUM_GPUS, drop_remainder=True) \
-        .repeat(epochs) \
         .cache()
+    #    .repeat(epochs) \
     test_dataset = tf.data.Dataset.from_tensor_slices((x_test, y_test)) \
         .map(scale) \
         .shuffle(x_test.shape[0]) \
@@ -137,10 +140,10 @@ print('Y test counter:', Counter(list(y_test.flatten())))
 
 if dist_config_file:
     print('------------------ Distributed Training ------------------')
-    # dist_config = json.loads(dist_config_file.read())
+    dist_config = json.loads(dist_config_file.read())
     ip = socket.gethostbyname(socket.gethostname())
-    # workers = dist_config['worker']
-    workers = ['146.169.53.225:2223', '146.169.53.207:2222']
+    workers = dist_config['worker']
+    # workers = ['146.169.53.225:2223', '146.169.53.207:2222']
     index = list(map(lambda x: x.split(':')[0], workers)).index(ip)
     print(workers)
 
@@ -150,58 +153,22 @@ if dist_config_file:
     })
     strategy = tf.compat.v1.distribute.experimental.MultiWorkerMirroredStrategy()
 
-    epochs = 2
-    train_dataset, test_dataset = get_data(x_train, y_train, x_test, y_test, epochs)
+    epochs = 50
+    BS_PER_GPU = 64
+    NUM_GPUS = len(workers)
+    train_dataset, test_dataset = get_data(x_train, y_train, x_test, y_test,
+                                           epochs=epochs, gpus=NUM_GPUS, bs=BS_PER_GPU)
     model = build_distributed_model(strategy)
-
-    """
-    opt = Adam(lr=0.00001)
-    model = distributed_train_model(x_train, y_train, build_model,
-            workers, index, opt, epochs=3, batch_size=batch_size)
-    """
 
     class_weight = Counter(y_train.flatten())
     zeros = class_weight[1] / y_train.shape[0]
     ones = class_weight[0] / y_train.shape[0]
-    BS_PER_GPU = 64
-    NUM_GPUS = 2
-    spe = x_train.shape[0] // (BS_PER_GPU * NUM_GPUS)
-    model.fit(train_dataset, steps_per_epoch=spe, class_weight={0: zeros, 1: ones}, verbose=1)
+    steps_per_epoch = x_train.shape[0] // (BS_PER_GPU * NUM_GPUS)
+    model.fit(train_dataset, epochs=epochs, steps_per_epoch=steps_per_epoch,
+            class_weight={0: zeros, 1: ones}, verbose=1)
 
     saved_model_path = '/tmp/keras_save'
     model.save(saved_model_path)
-
-    """
-    # steps_per_epoch=x.shape[0] // (BS_PER_GPU * NUM_GPUS),
-    result = predict(test_dataset, model, threshold=0.6)
-
-    test_dataset = tf.data.Dataset.from_tensor_slices((x_test, y_test)) \
-            .map(scale) \
-            .batch(batch_size * len(workers), drop_remainder=True)
-    """
-
-    """
-    tf_x_test = test_dataset.map(lambda image, label: image)
-    tf_y_test = test_dataset.map(lambda image, label: label)
-    threshold = 0.6
-    results = []
-    y_test = []
-    for x, y in test_dataset:
-        print(x.shape)
-        pred = model.predict(x)
-        print(pred.shape)
-        pred[pred >= threshold] = 1
-        pred[pred < threshold] = 0
-        results += pred.flatten().tolist()
-        # y = tf_y_test.take(1)
-        y_test += y.numpy().flatten().astype('float16').tolist()
-
-    print(len(results))
-    print(len(y_test))
-    print(confusion_matrix(y_test, results))
-    print(classification_report(y_test, results))
-    print(f1_score(y_test, results))
-    """
 else:
     model = build_model()
     print('***************** Local training *****************')
