@@ -6,56 +6,89 @@ import pandas as pd
 import tensorflow as tf
 import tensorflow.keras.backend as kb
 from tensorflow.keras import Model, losses
-from tensorflow.keras.layers import Dense, Dropout
+from tensorflow.keras.layers import Dense, Dropout, GlobalAveragePooling2D
 from tensorflow.keras.regularizers import l1
-from tensorflow.keras.applications.vgg16 import VGG16
+from tensorflow.keras.applications import (VGG16, VGG19, ResNet50, 
+    ResNet152, ResNet101, InceptionResNetV2, Xception, DenseNet121,
+    DenseNet169, DenseNet201
+)
 
 
-def preprocess_data(x_train, y_train, x_test, y_test, processors=2, batch_size_per_processor=64):
+def preprocess_data(x_train, y_train, x_test, y_test, processors=2, batch_size_per_processor=64, seed=42):
+    tf.random.set_seed(seed)
 
-    def scale(image, label):
+    def convert_types(image, label):
         image = tf.cast(image, tf.float16)
         label = tf.cast(label, tf.float16)
-        # image /= 255
+        return image, label
+
+    def scale(image, label):
+        image /= 255
         return image, label
 
     def normalize(image, label):
-        # image = tf.image.per_image_standardization(image)
+        image = tf.image.per_image_standardization(image)
+        return image, label
+
+    def random_flip(image, label):
+        image = tf.image.random_flip_up_down(image, seed=seed)
         return image, label
 
     batch_size = processors * batch_size_per_processor 
 
-    tf.random.set_seed(42)
-
     train_dataset = tf.data.Dataset.from_tensor_slices((x_train, y_train)) \
-        .map(scale) \
-        .map(normalize) \
         .shuffle(x_train.shape[0]) \
         .batch(batch_size, drop_remainder=True) \
         .cache()
     test_dataset = tf.data.Dataset.from_tensor_slices((x_test, y_test)) \
-        .map(scale) \
-        .map(normalize) \
         .shuffle(x_test.shape[0]) \
         .batch(batch_size, drop_remainder=True) \
         .cache()
 
     return train_dataset, test_dataset
 
+def resnet152_backbone():
+    base_model = ResNet152(weights='imagenet', include_top=False)
+
+    for layers in base_model.layers:
+        layers.trainable = False
+
+    backbone = base_model.layers[-1].output
+    backbone = GlobalAveragePooling2D()(backbone)
+    return (base_model.input, backbone)
+
+def resnet50_backbone():
+    base_model = ResNet50(weights='imagenet')
+
+    for layers in base_model.layers:
+        layers.trainable = False
+
+    backbone = base_model.layers[-2].output
+    return (base_model.input, backbone)
+
+def inception_resnet_backbone():
+    base_model = InceptionResNetV2(weights='imagenet')
+
+    for layers in base_model.layers:
+        layers.trainable = False
+
+    backbone = base_model.layers[-2].output
+    return (base_model.input, backbone)
+
 def build_model():
-    vgg = VGG16(weights='imagenet', include_top=True)
-    
-    for layers in (vgg.layers): layers.trainable = False
-    
-    # VGG Backbone - output from convolutional layers
-    backbone = vgg.layers[-4].output
-    # Attach my own FC layers on top of VGG backbone
-    # 300
+    # https://keras.io/api/applications/
+    # VGG16 - f1-scroe: 0.68, loss: 0.3, Adam(lr=0.00001)
+    # VGG19 - f1-scroe: 0.55, loss: 0.46
+    # Resnet152 - f1-score 0.40, loss: 0.33
+
+    # DenseNet121, DenseNet169, DenseNet201, ResNet50, ResNet152, ResNet101
+    base_input, backbone = inception_resnet_backbone()
+
     fc1 = Dense(300, activation='relu', name='my_fc1', 
-                activity_regularizer=l1(0.001))(backbone)
+        activity_regularizer=l1(0.001))(backbone)
     do1 = Dropout(0.5, seed=41)(fc1)
     fc2 = Dense(100, activation='relu', name='my_fc2',
-                activity_regularizer=l1(0.001))(do1)
+        activity_regularizer=l1(0.001))(do1)
     do1 = Dropout(0.5, seed=41)(fc2)
     
     # Loss function for bounding box regression
@@ -64,9 +97,8 @@ def build_model():
     cls = Dense(1, activation='tanh', name='fg_cls')(do1)
     
     # Combine backbone and my outputs to form the NN pipeline
-    # model = Model(inputs=vgg.input, outputs=[cls])
-    model = Model(inputs=vgg.input, outputs=cls)
-    # print(model.summary())
+    # model = Model(inputs=base_model.input, outputs=[cls])
+    model = Model(inputs=base_input, outputs=cls)
     return model
 
 def multitask_reg_cls_loss(y_true, y_pred):
