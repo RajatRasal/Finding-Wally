@@ -1,5 +1,8 @@
 *DS_Store
 
+# Tensorboard Logs
+logs/
+
 # Vim
 *.sw[op]
 

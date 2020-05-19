@@ -4,5 +4,6 @@ train_dist: train.py x_test.pkl x_train.pkl y_test.pkl y_train.pkl dist_config.j
 	  -d dist_config.json \
 	  -l logs/train/
 
-tensorboard_single_image:
+tensorboard_train_data:
 	python log.py
+	tensorboard --logdir ./logs/train_data

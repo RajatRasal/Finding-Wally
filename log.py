@@ -60,19 +60,16 @@ file_writer = tf.summary.create_file_writer(logdir)
 
 import os
 from PIL import Image
+from collections import Counter
 
 # Using the file writer, log the reshaped image.
 with file_writer.as_default():
-    x_train = pickle.load(open('x_train.pkl', 'rb'))
-    images = np.reshape(x_train[0:25].astype('int'), (-1, 224, 224, 3))
-    print(images[0].mean())
-    print(images[0].std())
-    from collections import Counter
-    print(Counter(images[0].flatten()))
-    np.save('trial_25.npy', images)
+    # x_train = pickle.load(open('x_train.pkl', 'rb'))
+    x_train = np.load('trial_25.npy')
+    images = np.reshape(x_train.astype('uint8'), (-1, 224, 224, 3))
     tf.summary.image("Training data", images, max_outputs=25, step=0)
 
-    for img_file in os.listdir('./data/original-images/'):
-        if 'jpg' in img_file:
-            og_img = Image.open('./data/original-images/' + img_file)
-            tf.summary.image(img_file, images, step=0)
+    # for img_file in os.listdir('./data/original-images/'):
+    #     if 'jpg' in img_file:
+    #         og_img = Image.open('./data/original-images/' + img_file)
+    #         tf.summary.image(img_file, images, step=0)
