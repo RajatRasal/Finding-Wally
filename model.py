@@ -75,14 +75,33 @@ def inception_resnet_backbone():
     backbone = base_model.layers[-2].output
     return (base_model.input, backbone)
 
+def densenet121_backbone():
+    base_model = DenseNet121(weights='imagenet')
+
+    for layers in base_model.layers:
+        layers.trainable = False
+
+    backbone = base_model.layers[-2].output
+    return (base_model.input, backbone)
+
+def vgg16_backbone():
+    base_model = VGG16(weights='imagenet')
+
+    for layers in base_model.layers:
+        layers.trainable = False
+
+    backbone = base_model.layers[-4].output
+    return (base_model.input, backbone)
+
 def build_model():
     # https://keras.io/api/applications/
     # VGG16 - f1-scroe: 0.68, loss: 0.3, Adam(lr=0.00001)
     # VGG19 - f1-scroe: 0.55, loss: 0.46
     # Resnet152 - f1-score 0.40, loss: 0.33
+    # DenseNet121 - f1-score: 0.4, loss: 1.1
 
     # DenseNet121, DenseNet169, DenseNet201, ResNet50, ResNet152, ResNet101
-    base_input, backbone = inception_resnet_backbone()
+    base_input, backbone = vgg16_backbone()
 
     fc1 = Dense(300, activation='relu', name='my_fc1', 
         activity_regularizer=l1(0.001))(backbone)
