@@ -14,9 +14,6 @@ print("TensorFlow version: ", tf.__version__)
 assert .parse(tf.__version__).release[0] >= 2, \
             "This notebook requires TensorFlow 2.0 or above."
 """
-"""
-logdir = "logs/plots/" + datetime.now().strftime("%Y%m%d-%H%M%S")
-file_writer = tf.summary.create_file_writer(logdir)
 
 def plot_to_image(figure):
     # Save the plot to a PNG in memory.
@@ -46,12 +43,22 @@ def image_grid():
     
     return figure
 
-# Prepare the plot
-figure = image_grid()
-# Convert to image and log
-with file_writer.as_default():
-tf.summary.image("Training data", plot_to_image(figure), step=0)
-"""
+def plot_confusion_matrix(cm, class_names):
+    return None
+
+def log_confusion_matrix(cm, file_writer):
+    figure = plot_confusion_matrix(cm, class_names=class_names)
+    cm_image = plot_to_image(figure)
+
+    with file_writer_cm.as_default():
+        tf.summary.image("Confusion Matrix", cm_image)
+
+
+# # Prepare the plot
+# figure = image_grid()
+# # Convert to image and log
+# with file_writer.as_default():
+# tf.summary.image("Training data", plot_to_image(figure), step=0)
 
 # Sets up a timestamped log directory.
 logdir = "./logs/train_data/" + datetime.now().strftime("%Y%m%d-%H%M%S")
