@@ -10,5 +10,6 @@ test:
 	  -f x_train.pkl y_train.pkl x_test.pkl y_test.pkl \
 	  -m ./saved_model
 
-tensorboard_single_image:
+tensorboard_train_data:
 	python log.py
+	tensorboard --logdir ./logs/train_data
