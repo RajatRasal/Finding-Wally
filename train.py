@@ -44,7 +44,7 @@ def build_distributed_model(strategy):
     with strategy.scope():
         model = build_model()
         model.compile(loss='binary_crossentropy',
-            optimizer=Adam(lr=0.000001),
+            optimizer=Adam(lr=0.00001),
             metrics=[f1_score]
         )
         return model
@@ -69,9 +69,13 @@ parser.add_argument('-d', '--distributed',
 parser.add_argument('-l', '--logdir',
     help='Tensorboard logging directory'
 )
+parser.add_argument('-o', '--output',
+    help='Output saved model'
+)
 args = parser.parse_args()
 x_train_file, y_train_file, x_test_file, y_test_file = args.file
 dist_config_file = args.distributed
+saved_model_path = args.output
 
 # Tensorboard logging callbacks
 logdir = args.logdir + datetime.now().strftime('%Y%m%d-%H%M%S')
@@ -127,7 +131,6 @@ if dist_config_file:
         verbose=1
     )
 
-    saved_model_path = '/tmp/keras_save'
     model.save(saved_model_path)
 else:
     model = build_model()

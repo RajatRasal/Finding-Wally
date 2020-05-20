@@ -1,4 +1,8 @@
 *DS_Store
+data/original-images/[0-9][0-9]_candidates
+
+# saved model 
+saved_model/
 
 # Vim
 *.sw[op]

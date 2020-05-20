@@ -10,17 +10,18 @@ from model import f1_score, preprocess_data
 
 description = 'Make predictions using a model'
 parser = argparse.ArgumentParser(description=description)
-parser.add_argument('-m', '--model', nargs=1,
-                    help='Trained model file')
+parser.add_argument('-m', '--model', help='Trained model file')
 parser.add_argument('-f', '--file', nargs=4, type=argparse.FileType('rb'),
-                    help='Training files produced by generate_dataset.py')
+    help='Training files produced by generate_dataset.py'
+)
 args = parser.parse_args()
 x_train_file, y_train_file, x_test_file, y_test_file = args.file
-saved_model_path = args.model[0]
+saved_model_path = args.model
 
 # TODO: Change this to load_weights
 restored_model = tf.keras.models.load_model(saved_model_path, compile=True,
-        custom_objects={'f1_score': f1_score})
+    custom_objects={'f1_score': f1_score}
+)
 # restored_model.compile(optimizer='adam', loss='binary_crossentropy')
 
 x_train = pickle.load(x_train_file).astype('float16')
