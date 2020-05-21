@@ -78,11 +78,18 @@ for x, _ in test_dataset:
     images.append(x)
 
 titles = [f'test: {test}, pred: {pred}' for test, pred in zip(best_y_test, best_result)]
-figure = image_grid(images[0][:25].numpy().astype('uint8'), titles[:25])
-grid = plot_to_image(figure)
+
+images_in_grid = 25
+results_count = len(titles)
 
 logdir = "./logs/test_data/" + datetime.now().strftime("%Y%m%d-%H%M%S")
 file_writer = tf.summary.create_file_writer(logdir)
-
-with file_writer.as_default():
-    tf.summary.image("Test Data", grid, step=0)
+    
+for i in range(0, results_count // images_in_grid):
+    bottom = i * images_in_grid
+    top = (i + 1) * images_in_grid
+    figure = image_grid(images[0][bottom:top].numpy().astype('uint8'), titles[bottom:top])
+    grid = plot_to_image(figure)
+    
+    with file_writer.as_default():
+        tf.summary.image("Test Data", grid, step=i)

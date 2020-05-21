@@ -15,4 +15,4 @@ tensorboard_train_data:
 	tensorboard --logdir ./logs/train_data
 
 tensorboard_eval:
-	tensorboard --logdir ./logs/test_data
+	tensorboard --logdir ./logs/test_data --port=8080
