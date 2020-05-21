@@ -7,7 +7,7 @@ train_dist: train.py x_test.pkl x_train.pkl y_test.pkl y_train.pkl dist_config.j
 
 test:
 	python inference.py \
-	  -f x_train.pkl y_train.pkl x_test.pkl y_test.pkl \
+	  -f x_train.npy y_train.pkl x_test.npy y_test.pkl \
 	  -m ./saved_model
 
 tensorboard_train_data:

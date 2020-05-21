@@ -1,6 +1,7 @@
 import argparse
 
 import cloudpickle as pickle
+import numpy as np
 import tensorflow as tf
 from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.metrics import f1_score as f1_score_sk
@@ -24,8 +25,13 @@ restored_model = tf.keras.models.load_model(saved_model_path, compile=True,
 )
 # restored_model.compile(optimizer='adam', loss='binary_crossentropy')
 
-x_train = pickle.load(x_train_file).astype('float16')
-x_test = pickle.load(x_test_file).astype('float16')
+try:
+    x_train = np.load(x_train_file).astype('float16')
+    x_test = np.load(x_test_file).astype('float16')
+except Exception:
+    x_train = pickle.load(x_train_file).astype('float16')
+    x_test = pickle.load(x_test_file).astype('float16')
+
 y_train = pickle.load(y_train_file)
 y_test = pickle.load(y_test_file)
 
