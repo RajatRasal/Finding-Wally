@@ -29,17 +29,15 @@ def plot_to_image(figure):
     image = tf.expand_dims(image, 0)
     return image
 
-def image_grid():
-    # Create a figure to contain the plot.
-    figure = plt.figure(figsize=(10,10))
+def image_grid(train_images, titles, figsize=(10, 10)):
+    figure = plt.figure(figsize=figsize)
 
     for i in range(25):
-        # Start next subplot.
-        plt.subplot(5, 5, i + 1, title=class_names[train_labels[i]])
+        plt.subplot(5, 5, i + 1, title=titles[i])
         plt.xticks([])
         plt.yticks([])
         plt.grid(False)
-        plt.imshow(train_images[i], cmap=plt.cm.binary)
+        plt.imshow(train_images[i])
     
     return figure
 
@@ -60,23 +58,24 @@ def log_confusion_matrix(cm, file_writer):
 # with file_writer.as_default():
 # tf.summary.image("Training data", plot_to_image(figure), step=0)
 
-# Sets up a timestamped log directory.
-logdir = "./logs/train_data/" + datetime.now().strftime("%Y%m%d-%H%M%S")
-# Creates a file writer for the log directory.
-file_writer = tf.summary.create_file_writer(logdir)
-
-import os
-from PIL import Image
-from collections import Counter
-
-# Using the file writer, log the reshaped image.
-with file_writer.as_default():
-    # x_train = pickle.load(open('x_train.pkl', 'rb'))
-    x_train = np.load('trial_25.npy')
-    images = np.reshape(x_train.astype('uint8'), (-1, 224, 224, 3))
-    tf.summary.image("Training data", images, max_outputs=25, step=0)
-
-    # for img_file in os.listdir('./data/original-images/'):
-    #     if 'jpg' in img_file:
-    #         og_img = Image.open('./data/original-images/' + img_file)
-    #         tf.summary.image(img_file, images, step=0)
+if __name__ == '__main__':
+    # Sets up a timestamped log directory.
+    logdir = "./logs/train_data/" + datetime.now().strftime("%Y%m%d-%H%M%S")
+    # Creates a file writer for the log directory.
+    file_writer = tf.summary.create_file_writer(logdir)
+    
+    import os
+    from PIL import Image
+    from collections import Counter
+    
+    # Using the file writer, log the reshaped image.
+    with file_writer.as_default():
+        # x_train = pickle.load(open('x_train.pkl', 'rb'))
+        x_train = np.load('trial_25.npy')
+        images = np.reshape(x_train.astype('uint8'), (-1, 224, 224, 3))
+        tf.summary.image("Training data", images, max_outputs=25, step=0)
+    
+        # for img_file in os.listdir('./data/original-images/'):
+        #     if 'jpg' in img_file:
+        #         og_img = Image.open('./data/original-images/' + img_file)
+        #         tf.summary.image(img_file, images, step=0)

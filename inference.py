@@ -1,4 +1,5 @@
 import argparse
+from datetime import datetime
 
 import cloudpickle as pickle
 import numpy as np
@@ -7,6 +8,7 @@ from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.metrics import f1_score as f1_score_sk
 
 from model import f1_score, preprocess_data
+from log import image_grid, plot_to_image
 
 
 description = 'Make predictions using a model'
@@ -25,6 +27,7 @@ restored_model = tf.keras.models.load_model(saved_model_path, compile=True,
 )
 # restored_model.compile(optimizer='adam', loss='binary_crossentropy')
 
+print('Loading data')
 try:
     x_train = np.load(x_train_file).astype('float16')
     x_test = np.load(x_test_file).astype('float16')
@@ -37,6 +40,7 @@ y_test = pickle.load(y_test_file)
 
 y_train = y_train[1].astype('int8')
 y_test = y_test[1].astype('int8')
+print('Done loading')
 
 _, test_dataset = preprocess_data(x_train, y_train, x_test, y_test)
 
@@ -54,7 +58,7 @@ for t in range(40, 50, 1):
         pred[pred < threshold] = 0
         results += pred.flatten().tolist()
         y_test += y.numpy().flatten().astype('float16').tolist()
-    
+
     res = f1_score_sk(y_test, results)
     if res > best:
         best = res
@@ -62,7 +66,23 @@ for t in range(40, 50, 1):
         best_y_test = y_test
         best_result = results
 
+cm = confusion_matrix(best_y_test, best_result)
 print(f'Threshold: {best_thres}')
 print(f'f1 score: {best}')
-print(f'confusion matrix:\n{confusion_matrix(best_y_test, best_result)}')
+print(f'confusion matrix:\n{cm}')
 print(classification_report(best_y_test, best_result))
+
+# Log inference output to Tensorboard
+images = []
+for x, _ in test_dataset:
+    images.append(x)
+
+titles = [f'test: {test}, pred: {pred}' for test, pred in zip(best_y_test, best_result)]
+figure = image_grid(images[0][:25].numpy().astype('uint8'), titles[:25])
+grid = plot_to_image(figure)
+
+logdir = "./logs/test_data/" + datetime.now().strftime("%Y%m%d-%H%M%S")
+file_writer = tf.summary.create_file_writer(logdir)
+
+with file_writer.as_default():
+    tf.summary.image("Test Data", grid, step=0)

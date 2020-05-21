@@ -13,3 +13,6 @@ test:
 tensorboard_train_data:
 	python log.py
 	tensorboard --logdir ./logs/train_data
+
+tensorboard_eval:
+	tensorboard --logdir ./logs/test_data
