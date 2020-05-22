@@ -35,6 +35,12 @@ except Exception:
     x_train = pickle.load(x_train_file).astype('float16')
     x_test = pickle.load(x_test_file).astype('float16')
 
+# TODO: Remove this hack - convert RGB to BGR in selective_search.py
+B = x_test[:, :, 0]
+R = x_test[:, :, 2]
+x_test[:, :, 0] = R
+x_test[:, :, 2] = B
+
 y_train = pickle.load(y_train_file)
 y_test = pickle.load(y_test_file)
 

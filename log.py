@@ -36,10 +36,10 @@ def image_grid(train_images, titles, figsize=(10, 10)):
     image_count = train_images.shape[0]
     row_count = image_count // col_size + 1
 
-    print(image_count, row_count)
+    # print(image_count, row_count)
 
     for i in range(image_count):
-        print(i)
+        # print(i)
         plt.subplot(row_count, col_size, i + 1, title=titles[i])
         plt.xticks([])
         plt.yticks([])

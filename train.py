@@ -18,7 +18,7 @@ from model import f1_score, build_model, preprocess_data
 
 
 def train_model(X, y, model, optimizer, random_state=42,
-                keras_metrics=[f1_score], epochs=100, batch_size=32):
+    keras_metrics=[f1_score], epochs=100, batch_size=32):
     # TODO: Seen and unseen should be between seen and unseen images
     class_weight = Counter(y_train.flatten())
     print(class_weight)
@@ -27,7 +27,10 @@ def train_model(X, y, model, optimizer, random_state=42,
     zeros = class_weight[1] / y_train.shape[0]
     ones = class_weight[0] / y_train.shape[0]
 
-    model.compile(loss='binary_crossentropy', optimizer=optimizer, metrics=keras_metrics)
+    model.compile(loss='binary_crossentropy',
+        optimizer=optimizer,
+        metrics=keras_metrics
+    )
     # steps_per_epoch=y_train.shape[0] / batch_size,
     history = model.fit(X, y, batch_size=batch_size,
         shuffle=True,
@@ -87,6 +90,12 @@ x_test = pickle.load(x_test_file).astype('float16')
 y_train = pickle.load(y_train_file)
 y_test = pickle.load(y_test_file)
 
+# TODO: Remove this hack - convert RGB to BGR in selective_search.py
+B = x_train[:, :, 0]
+R = x_train[:, :, 2]
+x_train[:, :, 0] = R
+x_train[:, :, 2] = B
+
 y_train = y_train[1].astype('int8')
 y_test = y_test[1].astype('int8')
 
@@ -97,8 +106,8 @@ if dist_config_file:
     print('------------------ Distributed Training ------------------')
     dist_config = json.loads(dist_config_file.read())
     ip = socket.gethostbyname(socket.gethostname())
-    # workers = dist_config['worker']
-    workers = ['146.169.53.219:2222']
+    workers = dist_config['worker']
+    # workers = ['146.169.53.219:2222']
     # workers = ['146.169.53.225:2223', '146.169.53.207:2222']
     index = list(map(lambda x: x.split(':')[0], workers)).index(ip)
     print(workers)

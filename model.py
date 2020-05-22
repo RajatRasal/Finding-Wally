@@ -12,6 +12,7 @@ from tensorflow.keras.applications import (VGG16, VGG19, ResNet50,
     ResNet152, ResNet101, InceptionResNetV2, Xception, DenseNet121,
     DenseNet169, DenseNet201
 )
+from tensorflow.keras.applications import vgg16  # import preprocess_input
 
 
 def preprocess_data(x_train, y_train, x_test, y_test, processors=2, batch_size_per_processor=64, seed=42):
@@ -34,13 +35,19 @@ def preprocess_data(x_train, y_train, x_test, y_test, processors=2, batch_size_p
         image = tf.image.random_flip_up_down(image, seed=seed)
         return image, label
 
+    def vgg_preprocess(image, label):
+        image = vgg16.preprocess_input(image)
+        return image, label
+
     batch_size = processors * batch_size_per_processor 
 
     train_dataset = tf.data.Dataset.from_tensor_slices((x_train, y_train)) \
+        .map(vgg_preprocess) \
         .shuffle(x_train.shape[0]) \
         .batch(batch_size, drop_remainder=True) \
         .cache()
     test_dataset = tf.data.Dataset.from_tensor_slices((x_test, y_test)) \
+        .map(vgg_preprocess) \
         .shuffle(x_test.shape[0]) \
         .batch(batch_size, drop_remainder=True) \
         .cache()
