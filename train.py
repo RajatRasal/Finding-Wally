@@ -99,8 +99,8 @@ logdir = args.logdir + datetime.now().strftime('%Y%m%d-%H%M%S')
 tensorboard_callback = keras.callbacks.TensorBoard(log_dir=logdir)
 file_writer_cm = tf.summary.create_file_writer(logdir + '/cm')
 
-x_train = pickle.load(x_train_file).astype('float16')
-x_test = pickle.load(x_test_file).astype('float16')
+x_train = pickle.load(x_train_file).astype('float64')
+x_test = pickle.load(x_test_file).astype('float64')
 _y_train = pickle.load(y_train_file)
 _y_test = pickle.load(y_test_file)
 
@@ -111,10 +111,13 @@ x_train[:, :, 0] = R
 x_train[:, :, 2] = B
 
 # TODO: Remove all of this and put into selective_search.py or generate_dataset.py
-y_reg_train = _y_train[0].astype('uint8')
-y_cls_train = _y_train[1].astype('uint8')
-y_reg_test = _y_test[0].astype('uint8')
-y_cls_test = _y_test[1].astype('uint8')
+y_reg_train = _y_train[0]
+y_cls_train = _y_train[1]
+y_reg_test = _y_test[0]
+y_cls_test = _y_test[1]
+
+y_reg_train[np.isnan(y_reg_train)] = 0
+y_reg_test[np.isnan(y_reg_test)] = 0
 
 assert y_reg_train.shape[0] == y_cls_train.shape[0]
 assert y_reg_test.shape[0] == y_cls_test.shape[0]
@@ -175,13 +178,14 @@ if dist_config_file:
     model.save(saved_model_path)
 else:
     print('***************** Local training *****************')
-    epochs = 50
-    BS_PER_GPU = 32
+    epochs = 20
+    BS_PER_GPU = 64
     NUM_GPUS = 1
 
     train_dataset, test_dataset = preprocess_data(x_train, y_train,
         x_test, y_test,
-        NUM_GPUS, BS_PER_GPU
+        processors=NUM_GPUS,
+        batch_size_per_processor=BS_PER_GPU
     )
 
     model = build_and_compile_model()

@@ -21,8 +21,8 @@ def preprocess_data(x_train, y_train, x_test, y_test, processors=2,
     tf.random.set_seed(seed)
 
     def convert_types(image, label):
-        image = tf.cast(image, tf.float16)
-        label = tf.cast(label, tf.float16)
+        image = tf.cast(image, tf.float64)
+        label = tf.cast(label, tf.float64)
         return image, label
 
     def random_flip(image, label):
@@ -122,21 +122,21 @@ def build_model():
     return model
 
 def rcnn_reg_loss(y_true, y_pred):
-    cls_pred = y_pred
-    cls_true = y_true[:, :4]
+    reg_pred = y_pred
+    reg_true = y_true[:, :4]
 
     # print(f'first row true: {cls_true[0]}')
     # print(f'Pred shape: {cls_pred.shape}, Actual shape: {cls_true.shape}')
-    sse_loss = tf.reduce_sum(tf.square(cls_true - cls_pred))
+    sse_loss = tf.reduce_sum(tf.square(reg_true - reg_pred))
 
     return sse_loss
 
 def rcnn_cls_loss(y_true, y_pred):
-    _cls_pred = y_pred
-    _cls_true = y_true[:, 4:]
+    cls_pred = y_pred
+    cls_true = y_true[:, 4:]
     # print(f'Pred shape: {_cls_pred.shape}, Actual shape: {_cls_true.shape}')
-    cls_pred = kb.clip(_cls_pred, kb.epsilon(), 1 - kb.epsilon())
-    cls_true = kb.clip(_cls_true, kb.epsilon(), 1 - kb.epsilon())
+    # cls_pred = kb.clip(_cls_pred, kb.epsilon(), 1 - kb.epsilon())
+    # cls_true = kb.clip(_cls_true, kb.epsilon(), 1 - kb.epsilon())
     bce_loss = losses.binary_crossentropy(cls_true, cls_pred)
     return bce_loss
 
