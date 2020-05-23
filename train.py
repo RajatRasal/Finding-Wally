@@ -1,4 +1,5 @@
 import argparse
+import functools
 import json
 import os
 import socket
@@ -14,13 +15,16 @@ from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.metrics import f1_score as f1_score_sk
 from tensorflow.keras.optimizers import Adam, SGD
 
-from model import f1_score, build_model, preprocess_data
+from model import (f1_score, build_model, preprocess_data,
+    rcnn_reg_loss, rcnn_cls_loss
+)
 
 
 def train_model(X, y, model, optimizer, random_state=42,
-    keras_metrics=[f1_score], epochs=100, batch_size=32):
+    keras_metrics=[f1_score], epochs=100, batch_size=32
+):
     # TODO: Seen and unseen should be between seen and unseen images
-    class_weight = Counter(y_train.flatten())
+    class_weight = Counter(y_train[:, 4].flatten())
     print(class_weight)
     print(class_weight[0])
     print(class_weight[1])
@@ -43,7 +47,17 @@ def train_model(X, y, model, optimizer, random_state=42,
 
     return model
 
-def build_distributed_model(strategy):
+def build_and_compile_model():
+    model = build_model()
+    multitask_loss = [rcnn_reg_loss, rcnn_cls_loss]
+    model.compile(loss=multitask_loss,
+        optimizer=Adam(lr=0.001),
+    )
+    #    metrics=[f1_score]
+    # )
+    return model
+
+def build_and_compile_distributed_model(strategy, batch_size):
     with strategy.scope():
         model = build_model()
         model.compile(loss='binary_crossentropy',
@@ -87,8 +101,8 @@ file_writer_cm = tf.summary.create_file_writer(logdir + '/cm')
 
 x_train = pickle.load(x_train_file).astype('float16')
 x_test = pickle.load(x_test_file).astype('float16')
-y_train = pickle.load(y_train_file)
-y_test = pickle.load(y_test_file)
+_y_train = pickle.load(y_train_file)
+_y_test = pickle.load(y_test_file)
 
 # TODO: Remove this hack - convert RGB to BGR in selective_search.py
 B = x_train[:, :, 0]
@@ -96,18 +110,34 @@ R = x_train[:, :, 2]
 x_train[:, :, 0] = R
 x_train[:, :, 2] = B
 
-y_train = y_train[1].astype('int8')
-y_test = y_test[1].astype('int8')
+# TODO: Remove all of this and put into selective_search.py or generate_dataset.py
+y_reg_train = _y_train[0].astype('uint8')
+y_cls_train = _y_train[1].astype('uint8')
+y_reg_test = _y_test[0].astype('uint8')
+y_cls_test = _y_test[1].astype('uint8')
 
-print('Y train counter:', Counter(list(y_train.flatten())))
-print('Y test counter:', Counter(list(y_test.flatten())))
+assert y_reg_train.shape[0] == y_cls_train.shape[0]
+assert y_reg_test.shape[0] == y_cls_test.shape[0]
+
+y_train = np.zeros((y_reg_train.shape[0], 5))
+y_test = np.zeros((y_reg_test.shape[0], 5))
+print(f'Train shape: {y_train.shape}')
+print(f'Test shape: {y_test.shape}')
+
+y_train[:, 0:4] = y_reg_train
+y_train[:, 4:] = y_cls_train
+y_test[:, 0:4] = y_reg_test
+y_test[:, 4:] = y_cls_test
+
+# print('Y train counter:', Counter(list(y_train.flatten())))
+# print('Y test counter:', Counter(list(y_test.flatten())))
 
 if dist_config_file:
     print('------------------ Distributed Training ------------------')
     dist_config = json.loads(dist_config_file.read())
     ip = socket.gethostbyname(socket.gethostname())
-    workers = dist_config['worker']
-    # workers = ['146.169.53.219:2222']
+    # workers = dist_config['worker']
+    workers = ['146.169.53.219:2222']
     # workers = ['146.169.53.225:2223', '146.169.53.207:2222']
     index = list(map(lambda x: x.split(':')[0], workers)).index(ip)
     print(workers)
@@ -118,16 +148,18 @@ if dist_config_file:
         'task': {'type': 'worker', 'index': index}
     })
     print(os.environ['TF_CONFIG'])
-    # strategy = tf.compat.v1.distribute.experimental.MultiWorkerMirroredStrategy()
 
     epochs = 50
     BS_PER_GPU = 64
     NUM_GPUS = len(workers)
-    train_dataset, test_dataset = preprocess_data(x_train, y_train,
-        x_test, y_test,
+    train_dataset, test_dataset = preprocess_data(x_train, y_train[:, 4],
+        x_test, y_test[:, 4],
         NUM_GPUS, BS_PER_GPU
     )
-    model = build_distributed_model(strategy)
+
+    model = build_and_compile_distributed_model(strategy,
+        batch_size=BS_PER_GPU * NUM_GPUS
+    )
 
     class_weight = Counter(y_train.flatten())
     zeros = class_weight[1] / y_train.shape[0]
@@ -142,21 +174,23 @@ if dist_config_file:
 
     model.save(saved_model_path)
 else:
-    model = build_model()
     print('***************** Local training *****************')
-    # model = train_model(x_train/255, y_train, model, Adam(lr=0.00001), epochs=3, batch_size=200)
-    model = train_model(x_train, y_train, model, Adam(lr=0.00001), epochs=2, batch_size=128)
-    
-    result_in_sample = predict(x_train/255, model, threshold=0.6)
-    result_out_sample = predict(x_test/255, model, threshold=0.6)
-    
-    print(f1_score_sk(y_train.astype('int32').flatten(), result_in_sample.astype('int32').flatten()))
-    print(classification_report(y_train.astype('int32').flatten(), result_in_sample.astype('int32').flatten()))
-    print(confusion_matrix(y_train.astype('int32').flatten(), result_in_sample.astype('int32').flatten()))
-    
-    print(f1_score_sk(y_test.astype('int32').flatten(), result_out_sample.astype('int32').flatten()))
-    print(classification_report(y_test.astype('int32').flatten(), result_out_sample.astype('int32').flatten()))
-    print(confusion_matrix(y_test.astype('int32').flatten(), result_out_sample.astype('int32').flatten()))
-    
-    with open('./result.pkl', 'wb') as f:
-        pickle.dump(result_out_sample, f)
+    epochs = 50
+    BS_PER_GPU = 32
+    NUM_GPUS = 1
+
+    train_dataset, test_dataset = preprocess_data(x_train, y_train,
+        x_test, y_test,
+        NUM_GPUS, BS_PER_GPU
+    )
+
+    model = build_and_compile_model()
+    steps_per_epoch = x_train.shape[0] // (BS_PER_GPU * NUM_GPUS)
+
+    model.fit(train_dataset,
+        epochs=epochs,
+        steps_per_epoch=steps_per_epoch,
+        verbose=1
+    )
+
+    model.save(saved_model_path)
