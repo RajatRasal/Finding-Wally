@@ -10,7 +10,7 @@ import cloudpickle as pickle
 import numpy as np
 import pandas as pd
 import tensorflow as tf
-import tensorflow.keras as keras 
+import tensorflow.keras as keras
 from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.metrics import f1_score as f1_score_sk
 from tensorflow.keras.optimizers import Adam, SGD
@@ -58,13 +58,17 @@ def build_and_compile_model():
     return model
 
 def build_and_compile_distributed_model(strategy, batch_size):
+    # multitask_loss = [rcnn_reg_loss, rcnn_cls_loss]
     with strategy.scope():
+        return build_and_compile_model()
+    """
         model = build_model()
         model.compile(loss='binary_crossentropy',
             optimizer=Adam(lr=0.00001),
             metrics=[f1_score]
         )
         return model
+    """
 
 def predict(X, model, threshold=0.6):
     pred = model.predict(X)
@@ -96,8 +100,7 @@ saved_model_path = args.output
 
 # Tensorboard logging callbacks
 logdir = args.logdir + datetime.now().strftime('%Y%m%d-%H%M%S')
-tensorboard_callback = keras.callbacks.TensorBoard(log_dir=logdir)
-file_writer_cm = tf.summary.create_file_writer(logdir + '/cm')
+# tensorboard_callback = keras.callbacks.TensorBoard(log_dir=logdir)
 
 x_train = pickle.load(x_train_file).astype('float64')
 x_test = pickle.load(x_test_file).astype('float64')
@@ -155,8 +158,8 @@ if dist_config_file:
     epochs = 50
     BS_PER_GPU = 64
     NUM_GPUS = len(workers)
-    train_dataset, test_dataset = preprocess_data(x_train, y_train[:, 4],
-        x_test, y_test[:, 4],
+    train_dataset, test_dataset = preprocess_data(x_train, y_train,
+        x_test, y_test,
         NUM_GPUS, BS_PER_GPU
     )
 
@@ -164,28 +167,32 @@ if dist_config_file:
         batch_size=BS_PER_GPU * NUM_GPUS
     )
 
-    class_weight = Counter(y_train.flatten())
-    zeros = class_weight[1] / y_train.shape[0]
-    ones = class_weight[0] / y_train.shape[0]
+    # class_weight = Counter(y_train.flatten())
+    # zeros = class_weight[1] / y_train.shape[0]
+    # ones = class_weight[0] / y_train.shape[0]
+    # class_weight={0: zeros, 1: ones},
     steps_per_epoch = x_train.shape[0] // (BS_PER_GPU * NUM_GPUS)
     model.fit(train_dataset, 
         epochs=epochs,
         steps_per_epoch=steps_per_epoch,
-        class_weight={0: zeros, 1: ones},
         verbose=1
     )
 
     model.save(saved_model_path)
 else:
     print('***************** Local training *****************')
-    epochs = 20
-    BS_PER_GPU = 64
+    # file_writer_cm = tf.summary.create_file_writer(logdir + '-train')
+    tensorboard_callback = keras.callbacks.TensorBoard(logdir)
+
+    epochs = 50
+    BS_PER_GPU = 16
     NUM_GPUS = 1
 
     train_dataset, test_dataset = preprocess_data(x_train, y_train,
         x_test, y_test,
         processors=NUM_GPUS,
-        batch_size_per_processor=BS_PER_GPU
+        batch_size_per_processor=BS_PER_GPU,
+        cache=False
     )
 
     model = build_and_compile_model()
@@ -194,7 +201,8 @@ else:
     model.fit(train_dataset,
         epochs=epochs,
         steps_per_epoch=steps_per_epoch,
-        verbose=1
+        verbose=1,
+        callbacks=[tensorboard_callback],
     )
 
     model.save(saved_model_path)
