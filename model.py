@@ -16,13 +16,13 @@ from tensorflow.keras.applications import vgg16  # import preprocess_input
 
 
 def preprocess_data(x_train, y_train, x_test, y_test, processors=2,
-    batch_size_per_processor=64, seed=42
+    batch_size_per_processor=64, cache=True, seed=42
 ):
     tf.random.set_seed(seed)
 
     def convert_types(image, label):
-        image = tf.cast(image, tf.float64)
-        label = tf.cast(label, tf.float64)
+        image = tf.cast(image, tf.float16)
+        label = tf.cast(label, tf.float16)
         return image, label
 
     def random_flip(image, label):
@@ -38,13 +38,15 @@ def preprocess_data(x_train, y_train, x_test, y_test, processors=2,
     train_dataset = tf.data.Dataset.from_tensor_slices((x_train, y_train)) \
         .map(vgg_preprocess) \
         .shuffle(x_train.shape[0]) \
-        .batch(batch_size, drop_remainder=True) \
-        .cache()
+        .batch(batch_size, drop_remainder=True)
     test_dataset = tf.data.Dataset.from_tensor_slices((x_test, y_test)) \
         .map(vgg_preprocess) \
         .shuffle(x_test.shape[0]) \
-        .batch(batch_size, drop_remainder=True) \
-        .cache()
+        .batch(batch_size, drop_remainder=True)
+
+    if cache:
+        train_dataset = train_dataset.cache()
+        test_dataset = test_dataset.cache()
 
     return train_dataset, test_dataset
 
@@ -105,17 +107,17 @@ def build_model():
     base_input, backbone = vgg16_backbone()
 
     # Combine backbone and my outputs to form the NN pipeline
-    fc1 = Dense(300, activation='relu', name='my_fc1', 
+    fc1 = Dense(300, activation='relu', name='additional_fc1',
         activity_regularizer=l1(0.001))(backbone)
     do1 = Dropout(0.5, seed=41)(fc1)
-    fc2 = Dense(100, activation='relu', name='my_fc2',
+    fc2 = Dense(100, activation='relu', name='additional_fc2',
         activity_regularizer=l1(0.001))(do1)
     do1 = Dropout(0.5, seed=41)(fc2)
     
     # Loss function for foreground/background classification
-    cls = Dense(1, activation='tanh', name='fg_cls')(do1)
+    cls = Dense(1, activation='sigmoid', name='classifier')(do1)
     # Loss function for bounding box regression
-    reg = Dense(4, activation='tanh', name='reg',
+    reg = Dense(4, activation='linear', name='regressor',
         activity_regularizer=l2(0.1))(do1)
     
     model = Model(inputs=base_input, outputs=[reg, cls])
@@ -124,11 +126,9 @@ def build_model():
 def rcnn_reg_loss(y_true, y_pred):
     reg_pred = y_pred
     reg_true = y_true[:, :4]
-
     # print(f'first row true: {cls_true[0]}')
     # print(f'Pred shape: {cls_pred.shape}, Actual shape: {cls_true.shape}')
     sse_loss = tf.reduce_sum(tf.square(reg_true - reg_pred))
-
     return sse_loss
 
 def rcnn_cls_loss(y_true, y_pred):
