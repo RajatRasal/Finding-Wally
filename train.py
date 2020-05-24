@@ -16,60 +16,25 @@ from sklearn.metrics import f1_score as f1_score_sk
 from tensorflow.keras.optimizers import Adam, SGD
 
 from model import (f1_score, build_model, preprocess_data,
-    rcnn_reg_loss, rcnn_cls_loss
+    rcnn_reg_loss, rcnn_cls_loss, rcnn_cls_f1_score, rcnn_reg_mse
 )
 
-
-def train_model(X, y, model, optimizer, random_state=42,
-    keras_metrics=[f1_score], epochs=100, batch_size=32
-):
-    # TODO: Seen and unseen should be between seen and unseen images
-    class_weight = Counter(y_train[:, 4].flatten())
-    print(class_weight)
-    print(class_weight[0])
-    print(class_weight[1])
-    zeros = class_weight[1] / y_train.shape[0]
-    ones = class_weight[0] / y_train.shape[0]
-
-    model.compile(loss='binary_crossentropy',
-        optimizer=optimizer,
-        metrics=keras_metrics
-    )
-    # steps_per_epoch=y_train.shape[0] / batch_size,
-    history = model.fit(X, y, batch_size=batch_size,
-        shuffle=True,
-        class_weight={0: zeros, 1: ones},
-        epochs=epochs,
-        use_multiprocessing=True,
-        workers=-1,
-        verbose=1
-    )
-
-    return model
 
 def build_and_compile_model():
     model = build_model()
     multitask_loss = [rcnn_reg_loss, rcnn_cls_loss]
+    metrics = [[rcnn_reg_mse], [rcnn_cls_f1_score]]
     model.compile(loss=multitask_loss,
-        optimizer=Adam(lr=0.001),
+        loss_weights=[0.5, 1],
+        metrics=metrics,
+        optimizer=Adam(lr=0.00001),
     )
-    #    metrics=[f1_score]
-    # )
     return model
 
 def build_and_compile_distributed_model(strategy, batch_size):
-    # multitask_loss = [rcnn_reg_loss, rcnn_cls_loss]
     with strategy.scope():
         return build_and_compile_model()
-    """
-        model = build_model()
-        model.compile(loss='binary_crossentropy',
-            optimizer=Adam(lr=0.00001),
-            metrics=[f1_score]
-        )
-        return model
-    """
-
+    
 def predict(X, model, threshold=0.6):
     pred = model.predict(X)
     pred[pred >= threshold] = 1
@@ -184,8 +149,8 @@ else:
     # file_writer_cm = tf.summary.create_file_writer(logdir + '-train')
     tensorboard_callback = keras.callbacks.TensorBoard(logdir)
 
-    epochs = 50
-    BS_PER_GPU = 16
+    epochs = 15
+    BS_PER_GPU = 32
     NUM_GPUS = 1
 
     train_dataset, test_dataset = preprocess_data(x_train, y_train,
@@ -201,8 +166,10 @@ else:
     model.fit(train_dataset,
         epochs=epochs,
         steps_per_epoch=steps_per_epoch,
-        verbose=1,
+        validation_data=test_dataset,
+        validation_freq=2,
         callbacks=[tensorboard_callback],
+        verbose=1,
     )
 
     model.save(saved_model_path)

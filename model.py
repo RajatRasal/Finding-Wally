@@ -126,19 +126,24 @@ def build_model():
 def rcnn_reg_loss(y_true, y_pred):
     reg_pred = y_pred
     reg_true = y_true[:, :4]
+    cls_true = y_true[:, 4:]
     # print(f'first row true: {cls_true[0]}')
     # print(f'Pred shape: {cls_pred.shape}, Actual shape: {cls_true.shape}')
-    sse_loss = tf.reduce_sum(tf.square(reg_true - reg_pred))
+    foreground_loss = tf.multiply(cls_true, tf.square(reg_true - reg_pred))
+    sse_loss = tf.reduce_sum(foreground_loss)
     return sse_loss
 
 def rcnn_cls_loss(y_true, y_pred):
-    cls_pred = y_pred
-    cls_true = y_true[:, 4:]
+    _cls_pred = y_pred
+    _cls_true = y_true[:, 4:]
     # print(f'Pred shape: {_cls_pred.shape}, Actual shape: {_cls_true.shape}')
-    # cls_pred = kb.clip(_cls_pred, kb.epsilon(), 1 - kb.epsilon())
-    # cls_true = kb.clip(_cls_true, kb.epsilon(), 1 - kb.epsilon())
-    bce_loss = losses.binary_crossentropy(cls_true, cls_pred)
-    return bce_loss
+    cls_pred = kb.clip(_cls_pred, kb.epsilon(), 1 - kb.epsilon())
+    cls_true = kb.clip(_cls_true, kb.epsilon(), 1 - kb.epsilon())
+    # bce_loss = losses.binary_crossentropy(cls_true, cls_pred)
+    weighted_bce_loss = -(0.2 * cls_true * kb.log(cls_true) + \
+        0.8 * (1 - cls_true) * kb.log(1 - cls_true)
+    )
+    return weighted_bce_loss
 
 def recall(y_true, y_pred):
     true_positives = kb.sum(kb.round(kb.clip(y_true * y_pred, 0, 1)))
@@ -156,3 +161,9 @@ def f1_score(y_true, y_pred):
     _precision = precision(y_true, y_pred)
     _recall = recall(y_true, y_pred)
     return 2 * ((_precision * _recall) / (_precision + _recall + kb.epsilon()))
+
+def rcnn_cls_f1_score(y_true, y_pred):
+    return f1_score(y_true[:, 4:], tf.math.round(y_pred))
+
+def rcnn_reg_mse(y_true, y_pred):
+    return losses.MSE(y_true[:, :4], y_pred)
