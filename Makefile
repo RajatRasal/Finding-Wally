@@ -25,3 +25,6 @@ tensorboard_train_data:
 
 tensorboard_eval:
 	tensorboard --logdir ./logs/test_data --port=8080
+
+generate_dataset:
+	python3 generate_dataset.py ./data/data.csv -t 19 31 49 20 56 21
