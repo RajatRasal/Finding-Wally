@@ -78,7 +78,10 @@ def find_image_coordinate(full_img, bounded_img):
     res = cv.matchTemplate(full_img, bounded_img, cv.TM_CCOEFF_NORMED)
     loc = np.where(res >= 0.9)
     x, y = loc[::-1]
-    return BBox(x=x[0], y=y[0], w=bounded_img.shape[1], h=bounded_img.shape[0])
+    return BBox(x=x[0], y=y[0],
+        w=bounded_img.shape[1],
+        h=bounded_img.shape[0]
+    )
 
 def iou_thresholding(candidates, actual, lower=0.2, upper=1):
     true_positives = []
@@ -101,11 +104,18 @@ def calculate_offsets(actual, proposal):
     return (t_x, t_y, t_w, t_h)
 
 def center_bbox(bbox):
-    return BBox(bbox.x + bbox.w // 2, bbox.y + bbox.h // 2, bbox.w, bbox.h)
+    return BBox(x=bbox.x + bbox.w // 2,
+        y=bbox.y + bbox.h // 2,
+        w=bbox.w,
+        h=bbox.h
+    )
 
 def apply_offset(centered_bbox, t_x, t_y, t_w, t_h):
-    return BBox(centered_bbox.x + t_x, centered_bbox.y + t_y, 
-                int(centered_bbox.w * t_w), int(centered_bbox.h * t_h))
+    return BBox(x=centered_bbox.x + t_x,
+        y=centered_bbox.y + t_y,
+        w=int(centered_bbox.w * t_w),
+        h=int(centered_bbox.h * t_h)
+    )
 
 
 if __name__ == '__main__':
@@ -145,12 +155,11 @@ if __name__ == '__main__':
 
         print('scaling')
         # Scale down and true region bounding box
+        # Many images are very big and will result in too many bounding boxes.
+        # We resize each image to height * width(=1000) to reduce the number of
+        #   region proposals.
         new_width = 1000
         scale = new_width / full_img.shape[1]
-        """
-        scaled_shape = (new_width, int(full_img.shape[0] * scale))
-        full_img_scaled = cv.resize(full_img, scaled_shape)
-        """
         full_img_scaled = scale_image_in_aspect_ratio(full_img, new_width)
 
         original_box = find_image_coordinate(full_img, bounded_img)
@@ -184,11 +193,6 @@ if __name__ == '__main__':
                 candidates2.append(proposal)
         print('After Proposals:', len(candidates2))
         candidates = candidates2
-        """
-        candidates = []
-        for proposal in candidates:
-            if proposal.width 
-        """
 
         lower = 0.4
         lower2 = 0.2
@@ -207,10 +211,6 @@ if __name__ == '__main__':
         tn = tn[:max(50, int(len(tp) * 2))]
 
         center_original_bbox = center_bbox(original_box_scaled)
-        # start = (center_original_bbox.x - center_original_bbox.w // 2,
-        #          center_original_bbox.y - center_original_bbox.h // 2)
-        # end = (center_original_bbox.x + center_original_bbox.w // 2,
-        #        center_original_bbox.y + center_original_bbox.h // 2)
         # cv.rectangle(full_img_scaled, start, end, colour, thickness)
         # print(f'center box: {center_original_bbox}')
         print(f'tp: {len(tp)}')
@@ -221,8 +221,6 @@ if __name__ == '__main__':
             cv.rectangle(full_img_scaled, (bbox.x, bbox.y),
                          (bbox.x + bbox.w, bbox.y + bbox.h), (0, 255, 255), thickness)
             # print(f'TP Center BBOX: {centered_bbox}')
-            """
-            """
 
             # Plot Proposed Region + Offset
             t_x, t_y, t_w, t_h = calculate_offsets(center_original_bbox, centered_bbox)
@@ -233,9 +231,6 @@ if __name__ == '__main__':
             end_new = (int(shifted_bbox.x + shifted_bbox.w // 2),
                        int(shifted_bbox.y + shifted_bbox.h // 2))
             cv.rectangle(full_img_scaled, start_new, end_new, (0, 0, 0), thickness)
-            # break
-            """
-            """
             data = data.append({'actual': no, 'x': bbox.x, 'y': bbox.y, 
                                 'w': bbox.w, 'h': bbox.h, 'fg': 1, 't_x': t_x,
                                 't_y': t_y, 't_w': t_w, 't_h': t_h},
@@ -243,8 +238,6 @@ if __name__ == '__main__':
 
         # plt.imshow(full_img_scaled)
         # plt.show()
-
-        # print(data.head())
 
         for bbox in tp2 + tn:
             data = data.append({'actual': no, 'x': bbox.x, 'y': bbox.y, 
