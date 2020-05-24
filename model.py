@@ -6,14 +6,17 @@ import pandas as pd
 import tensorflow as tf
 import tensorflow.keras.backend as kb
 from tensorflow.keras import Model, losses
+from tensorflow.keras.applications import vgg16
+from tensorflow.keras.applications import (VGG16, ResNet50, ResNet152,
+    InceptionResNetV2, DenseNet121
+)
 from tensorflow.keras.layers import Dense, Dropout, GlobalAveragePooling2D
 from tensorflow.keras.regularizers import l1, l2
-from tensorflow.keras.applications import (VGG16, VGG19, ResNet50, 
-    ResNet152, ResNet101, InceptionResNetV2, Xception, DenseNet121,
-    DenseNet169, DenseNet201
-)
-from tensorflow.keras.applications import vgg16  # import preprocess_input
 
+
+###############################################################################
+# Preprocessing
+###############################################################################
 
 def preprocess_data(x_train, y_train, x_test, y_test, processors=2,
     batch_size_per_processor=64, cache=True, seed=42
@@ -49,6 +52,10 @@ def preprocess_data(x_train, y_train, x_test, y_test, processors=2,
         test_dataset = test_dataset.cache()
 
     return train_dataset, test_dataset
+
+###############################################################################
+# Backbone Wrappers
+###############################################################################
 
 def resnet152_backbone():
     base_model = ResNet152(weights='imagenet', include_top=False)
@@ -96,6 +103,10 @@ def vgg16_backbone():
     backbone = base_model.layers[-4].output
     return (base_model.input, backbone)
 
+###############################################################################
+# Model Definition
+###############################################################################
+
 def build_model():
     # https://keras.io/api/applications/
     # VGG16 - f1-scroe: 0.68, loss: 0.3, Adam(lr=0.00001)
@@ -139,11 +150,14 @@ def rcnn_cls_loss(y_true, y_pred):
     # print(f'Pred shape: {_cls_pred.shape}, Actual shape: {_cls_true.shape}')
     cls_pred = kb.clip(_cls_pred, kb.epsilon(), 1 - kb.epsilon())
     cls_true = kb.clip(_cls_true, kb.epsilon(), 1 - kb.epsilon())
-    # bce_loss = losses.binary_crossentropy(cls_true, cls_pred)
-    weighted_bce_loss = -(0.2 * cls_true * kb.log(cls_true) + \
-        0.8 * (1 - cls_true) * kb.log(1 - cls_true)
+    weighted_bce_loss = -(0.3 * cls_true * kb.log(cls_true) + \
+        0.7 * (1 - cls_true) * kb.log(1 - cls_true)
     )
     return weighted_bce_loss
+
+###############################################################################
+# Training Loop Metrics
+###############################################################################
 
 def recall(y_true, y_pred):
     true_positives = kb.sum(kb.round(kb.clip(y_true * y_pred, 0, 1)))
@@ -167,3 +181,50 @@ def rcnn_cls_f1_score(y_true, y_pred):
 
 def rcnn_reg_mse(y_true, y_pred):
     return losses.MSE(y_true[:, :4], y_pred)
+
+###############################################################################
+# Build and Compile
+###############################################################################
+
+def build_and_compile_model():
+    model = build_model()
+    multitask_loss = [rcnn_reg_loss, rcnn_cls_loss]
+    metrics = [[rcnn_reg_mse], [rcnn_cls_f1_score]]
+    model.compile(loss=multitask_loss,
+        loss_weights=[0.5, 1],
+        metrics=metrics,
+        # optimizer=Adam(lr=0.00001),
+        optimizer=SGD(lr=0.00001),
+    )
+    return model
+
+def build_and_compile_distributed_model(strategy, batch_size):
+    with strategy.scope():
+        return build_and_compile_model()
+
+###############################################################################
+# Inference
+###############################################################################
+
+def predict(X, model, threshold=0.6):
+    pred = model.predict(X)
+    pred[pred >= threshold] = 1
+    pred[pred < threshold] = 0
+    return pred
+
+def save_model(model, saved_model_path):
+    model.save(saved_model_path)
+
+def load_model(saved_model_path):
+    custom_objects = {
+        'rcnn_reg_loss': rcnn_reg_loss,
+        'rcnn_cls_loss': rcnn_cls_loss,
+        'rcnn_reg_mse': rcnn_reg_mse,
+        'rcnn_cls_f1_score': rcnn_cls_f1_score
+    }
+    # TODO: Change this to load_weights
+    model = tf.keras.models.load_model(saved_model_path,
+        custom_objects=custom_objects,
+        compile=True,
+    )
+    return model

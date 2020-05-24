@@ -15,31 +15,9 @@ from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.metrics import f1_score as f1_score_sk
 from tensorflow.keras.optimizers import Adam, SGD
 
-from model import (f1_score, build_model, preprocess_data,
-    rcnn_reg_loss, rcnn_cls_loss, rcnn_cls_f1_score, rcnn_reg_mse
+from model import (preprocess_data, build_and_compile_model, 
+    build_and_compile_distributed_model, save_model
 )
-
-
-def build_and_compile_model():
-    model = build_model()
-    multitask_loss = [rcnn_reg_loss, rcnn_cls_loss]
-    metrics = [[rcnn_reg_mse], [rcnn_cls_f1_score]]
-    model.compile(loss=multitask_loss,
-        loss_weights=[0.5, 1],
-        metrics=metrics,
-        optimizer=Adam(lr=0.00001),
-    )
-    return model
-
-def build_and_compile_distributed_model(strategy, batch_size):
-    with strategy.scope():
-        return build_and_compile_model()
-    
-def predict(X, model, threshold=0.6):
-    pred = model.predict(X)
-    pred[pred >= threshold] = 1
-    pred[pred < threshold] = 0
-    return pred
 
 
 description = 'Choose between local or distributed training'
@@ -132,10 +110,6 @@ if dist_config_file:
         batch_size=BS_PER_GPU * NUM_GPUS
     )
 
-    # class_weight = Counter(y_train.flatten())
-    # zeros = class_weight[1] / y_train.shape[0]
-    # ones = class_weight[0] / y_train.shape[0]
-    # class_weight={0: zeros, 1: ones},
     steps_per_epoch = x_train.shape[0] // (BS_PER_GPU * NUM_GPUS)
     model.fit(train_dataset, 
         epochs=epochs,
@@ -143,14 +117,14 @@ if dist_config_file:
         verbose=1
     )
 
-    model.save(saved_model_path)
+    save_model(saved_model_path)
 else:
     print('***************** Local training *****************')
     # file_writer_cm = tf.summary.create_file_writer(logdir + '-train')
     tensorboard_callback = keras.callbacks.TensorBoard(logdir)
 
-    epochs = 15
-    BS_PER_GPU = 32
+    epochs = 50 
+    BS_PER_GPU = 128
     NUM_GPUS = 1
 
     train_dataset, test_dataset = preprocess_data(x_train, y_train,
@@ -167,9 +141,9 @@ else:
         epochs=epochs,
         steps_per_epoch=steps_per_epoch,
         validation_data=test_dataset,
-        validation_freq=2,
+        validation_freq=5,
         callbacks=[tensorboard_callback],
         verbose=1,
     )
 
-    model.save(saved_model_path)
+    save_model(saved_model_path)

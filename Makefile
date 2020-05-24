@@ -12,7 +12,7 @@ train: train.py x_test.pkl x_train.pkl y_test.pkl y_train.pkl dist_config.json
 	  -o ./saved_model
 
 test:
-	python inference.py \
+	python metrics.py \
 	  -f x_train.npy y_train.pkl x_test.npy y_test.pkl \
 	  -m ./saved_model
 

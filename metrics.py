@@ -7,9 +7,7 @@ import tensorflow as tf
 from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.metrics import f1_score as f1_score_sk
 
-from model import (f1_score, preprocess_data, rcnn_reg_loss,
-    rcnn_cls_loss, rcnn_reg_mse, rcnn_cls_f1_score
-)
+from model import preprocess_data, load_model
 from log import image_grid, plot_to_image
 
 
@@ -23,18 +21,7 @@ args = parser.parse_args()
 x_train_file, y_train_file, x_test_file, y_test_file = args.file
 saved_model_path = args.model
 
-# TODO: Change this to load_weights
-custom_objects = {
-    'rcnn_reg_loss': rcnn_reg_loss,
-    'rcnn_cls_loss': rcnn_cls_loss,
-    'rcnn_reg_mse': rcnn_reg_mse,
-    'rcnn_cls_f1_score': rcnn_cls_f1_score
-}
-restored_model = tf.keras.models.load_model(saved_model_path,
-    custom_objects=custom_objects,
-    compile=True,
-)
-# restored_model.compile(optimizer='adam', loss='binary_crossentropy')
+restored_model = load_model(saved_model_path)
 
 print('Loading data')
 try:
@@ -72,36 +59,18 @@ for _x_test, _y_test in test_dataset:
 result = np.concatenate(result)
 y_test = np.concatenate(y_test)
 
-"""
 best = float('-inf') 
-best_thres = 0
-best_result = []
-best_y_test = []
-for t in range(10, 90, 5):
-    threshold = t / 100  # 0.42
-    # for x, y in test_dataset:
-    #     pred = restored_model.predict(x)
-    #     reg = pred[0]
-    #     cls = pred[1]
-    #     cls[cls >= threshold] = 1
-    #     cls[cls < threshold] = 0
-    #     results += cls.flatten().tolist()
-    #     y_test += y.numpy().flatten().astype('float16').tolist()
 
-
-    res = f1_score_sk(y_test, results)
-    if res > best:
-        best = res
-        best_thres = threshold
-        best_y_test = y_test
-        best_result = results
-"""
-
-best_result = result.copy()
-best_thres = 0.5
-best_result[best_result >= best_thres] = 1
-best_result[best_result < best_thres] = 0
-best = f1_score_sk(y_test, best_result)
+for i in range(30, 80, 5):
+    _result = result.copy()
+    thres = i / 100
+    _result[_result >= thres] = 1
+    _result[_result < thres] = 0
+    f1 = f1_score_sk(y_test, _result)
+    if f1 > best:
+        best = f1 
+        best_thres = thres
+        best_result = _result
 
 best_y_test = y_test
 
