@@ -7,7 +7,9 @@ import tensorflow as tf
 from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.metrics import f1_score as f1_score_sk
 
-from model import f1_score, preprocess_data
+from model import (f1_score, preprocess_data, rcnn_reg_loss,
+    rcnn_cls_loss, rcnn_reg_mse, rcnn_cls_f1_score
+)
 from log import image_grid, plot_to_image
 
 
@@ -22,8 +24,15 @@ x_train_file, y_train_file, x_test_file, y_test_file = args.file
 saved_model_path = args.model
 
 # TODO: Change this to load_weights
-restored_model = tf.keras.models.load_model(saved_model_path, compile=True,
-    custom_objects={'f1_score': f1_score}
+custom_objects = {
+    'rcnn_reg_loss': rcnn_reg_loss,
+    'rcnn_cls_loss': rcnn_cls_loss,
+    'rcnn_reg_mse': rcnn_reg_mse,
+    'rcnn_cls_f1_score': rcnn_cls_f1_score
+}
+restored_model = tf.keras.models.load_model(saved_model_path,
+    custom_objects=custom_objects,
+    compile=True,
 )
 # restored_model.compile(optimizer='adam', loss='binary_crossentropy')
 
@@ -50,20 +59,35 @@ print('Done loading')
 
 _, test_dataset = preprocess_data(x_train, y_train, x_test, y_test)
 
-best = 0
+result = []
+y_test = []
+
+for _x_test, _y_test in test_dataset:
+    pred = restored_model.predict(_x_test)
+    reg = pred[0]
+    cls = pred[1]
+    result.append(cls.flatten())
+    y_test.append(_y_test.numpy().flatten())
+
+result = np.concatenate(result)
+y_test = np.concatenate(y_test)
+
+"""
+best = float('-inf') 
 best_thres = 0
 best_result = []
-best_ytest = []
-for t in range(40, 50, 1):
+best_y_test = []
+for t in range(10, 90, 5):
     threshold = t / 100  # 0.42
-    results = []
-    y_test = []
-    for x, y in test_dataset:
-        pred = restored_model.predict(x)
-        pred[pred >= threshold] = 1
-        pred[pred < threshold] = 0
-        results += pred.flatten().tolist()
-        y_test += y.numpy().flatten().astype('float16').tolist()
+    # for x, y in test_dataset:
+    #     pred = restored_model.predict(x)
+    #     reg = pred[0]
+    #     cls = pred[1]
+    #     cls[cls >= threshold] = 1
+    #     cls[cls < threshold] = 0
+    #     results += cls.flatten().tolist()
+    #     y_test += y.numpy().flatten().astype('float16').tolist()
+
 
     res = f1_score_sk(y_test, results)
     if res > best:
@@ -71,6 +95,15 @@ for t in range(40, 50, 1):
         best_thres = threshold
         best_y_test = y_test
         best_result = results
+"""
+
+best_result = result.copy()
+best_thres = 0.5
+best_result[best_result >= best_thres] = 1
+best_result[best_result < best_thres] = 0
+best = f1_score_sk(y_test, best_result)
+
+best_y_test = y_test
 
 cm = confusion_matrix(best_y_test, best_result)
 print(f'Threshold: {best_thres}')
