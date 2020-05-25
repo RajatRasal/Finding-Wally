@@ -17,6 +17,17 @@ from tensorflow.keras.regularizers import l1, l2
 ###############################################################################
 # Preprocessing
 ###############################################################################
+def preprocess_data():
+    # TODO: Abstract out preprocessing capabilities from selective_search.py
+    pass
+
+def train_test_split(x_train, y_train, x_test, y_test, processors=2,
+    batch_size_per_processor=64, cache=True, seed=42
+):
+    # TODO: Replace preprocess_data with this function. Replace body of this function
+    #  with preprocess data
+    # should call 
+    pass
 
 def preprocess_data(x_train, y_train, x_test, y_test, processors=2,
     batch_size_per_processor=64, cache=True, seed=42
