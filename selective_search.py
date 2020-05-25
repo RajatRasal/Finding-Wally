@@ -29,7 +29,7 @@ def scale_image_in_aspect_ratio(full_img, scale_width=1000):
     full_img_scaled = cv.resize(full_img, scaled_shape)
     return full_img_scaled
 
-def find_candidates(full_img):
+def find_candidates(full_img, quality=True):
     """
     Apply segmented search to the input image to find a set of bounding
     boxes. Each bounding box is a region of interest which may contain an
@@ -37,16 +37,19 @@ def find_candidates(full_img):
     """
     ss = cv.ximgproc.segmentation.createSelectiveSearchSegmentation()
     ss.setBaseImage(full_img)
-    ss.switchToSelectiveSearchQuality()
+    if quality:
+        ss.switchToSelectiveSearchQuality()
+    else:
+        ss.switchToSelectiveSearchFast()
     regions = ss.process()
-    
+
     candidates = set()
     for x, y, w, h in regions:
         bbox = BBox(x=x, y=y, w=w, h=h)
         if bbox in candidates:
             continue
         candidates.add(bbox)
-    
+
     return list(candidates)
 
 def iou(a, b):
@@ -231,7 +234,7 @@ if __name__ == '__main__':
             end_new = (int(shifted_bbox.x + shifted_bbox.w // 2),
                        int(shifted_bbox.y + shifted_bbox.h // 2))
             cv.rectangle(full_img_scaled, start_new, end_new, (0, 0, 0), thickness)
-            data = data.append({'actual': no, 'x': bbox.x, 'y': bbox.y, 
+            data = data.append({'actual': no, 'x': bbox.x, 'y': bbox.y,
                                 'w': bbox.w, 'h': bbox.h, 'fg': 1, 't_x': t_x,
                                 't_y': t_y, 't_w': t_w, 't_h': t_h},
                                ignore_index=True)
@@ -240,7 +243,7 @@ if __name__ == '__main__':
         # plt.show()
 
         for bbox in tp2 + tn:
-            data = data.append({'actual': no, 'x': bbox.x, 'y': bbox.y, 
+            data = data.append({'actual': no, 'x': bbox.x, 'y': bbox.y,
                                 'w': bbox.w, 'h': bbox.h, 'fg': 0, 't_x': None,
                                 't_y': None, 't_w': None, 't_h': None},
                                ignore_index=True)

@@ -47,7 +47,7 @@ def preprocess_data(x_train, y_train, x_test, y_test, processors=2,
         image = vgg16.preprocess_input(image)
         return image, label
 
-    batch_size = processors * batch_size_per_processor 
+    batch_size = processors * batch_size_per_processor
 
     train_dataset = tf.data.Dataset.from_tensor_slices((x_train, y_train)) \
         .map(vgg_preprocess) \
