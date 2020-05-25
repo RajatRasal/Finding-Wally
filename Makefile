@@ -16,6 +16,9 @@ test:
 	  -f x_train.npy y_train.pkl x_test.npy y_test.pkl \
 	  -m ./saved_model
 
+infer:
+	python inference.py
+
 tensorboard_train:
 	tensorboard --logdir ./logs/train --port=8080
 

@@ -29,7 +29,7 @@ def scale_image_in_aspect_ratio(full_img, scale_width=1000):
     full_img_scaled = cv.resize(full_img, scaled_shape)
     return full_img_scaled
 
-def find_candidates(full_img):
+def find_candidates(full_img, quality=True):
     """
     Apply segmented search to the input image to find a set of bounding
     boxes. Each bounding box is a region of interest which may contain an
@@ -37,16 +37,19 @@ def find_candidates(full_img):
     """
     ss = cv.ximgproc.segmentation.createSelectiveSearchSegmentation()
     ss.setBaseImage(full_img)
-    ss.switchToSelectiveSearchQuality()
+    if quality:
+        ss.switchToSelectiveSearchQuality()
+    else:
+        ss.switchToSelectiveSearchFast()
     regions = ss.process()
-    
+
     candidates = set()
     for x, y, w, h in regions:
         bbox = BBox(x=x, y=y, w=w, h=h)
         if bbox in candidates:
             continue
         candidates.add(bbox)
-    
+
     return list(candidates)
 
 def iou(a, b):

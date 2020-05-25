@@ -23,9 +23,11 @@ Y_1, X_1, Y_2, X_2 = 0, 1, 2, 3
 # offset indices - OpenCV format
 T_X, T_Y, T_W, T_H = 0, 1, 2, 3
 # Size of image required for model input
+IMG_NO = '21'
 IMG_DIM = 224
-# Prediction Threshold
-THRESHOLD = 0.4
+# Prediction
+BATCH_SIZE = 300
+THRESHOLD = 0.5
 
 class RegionProposalSequence(Sequence):
 
@@ -42,10 +44,13 @@ class RegionProposalSequence(Sequence):
         batch_y = self.y[idx * self.batch_size:(idx + 1) * self.batch_size]
         return batch_x, batch_y
 
+def draw_bboxes_cv(image, bboxes):
+    # TODO: implement
+    return image
 
 # Run selective search on image
-print('Loading image')
-image_path = './data/original-images/19.jpg'
+print(f'Loading image {IMG_NO}')
+image_path = f'./data/original-images/{IMG_NO}.jpg'
 image = np.array(Image.open(image_path))
 print('Done Loading')
 
@@ -54,33 +59,33 @@ print('Scaling Image')
 WIDTH = 1000
 image_scaled = scale_image_in_aspect_ratio(image, WIDTH)
 HEIGHT = image_scaled.shape[0]
-assert image_scaled.shape[1] == 1000
+assert image_scaled.shape[1] == WIDTH
 print('Done scaling')
 
 # Region proposal using selective search
 # TODO: Try tensorflow generate bounding box proposals
-print('Selective Search')
-candidates_path = './data/test_19_candidates'
+print(f'Selective Search')
+candidates_path = f'./data/test_{IMG_NO}_candidates'
 if os.path.lexists(candidates_path):
     with open(candidates_path, 'rb') as f:
         _candidates = pickle.load(f)
 else:
-    _candidates = find_candidates(image_scaled)
+    _candidates = find_candidates(image_scaled, False)
     with open(candidates_path, 'wb') as f:
-        pickle.dump(candidates, f)
+        pickle.dump(_candidates, f)
 print('Done Selective Search')
 
 candidates = []
 for i in range(len(_candidates)):
     bbox = _candidates[i]
-    if (50 < bbox.w < 150) and (50 < bbox.h < 150):
+    if (50 < bbox.w < 200) and (50 < bbox.h < 200):
         candidates.append(bbox)
 
 print('Preprocess image')
 # Normalise candidate box coordindates and put 
 #  into tf.image required format -> [y1, x1, y2, x2]
 print(len(candidates))
-no_candidates = 1000  # len(candidates)
+no_candidates = len(candidates)
 norm_candidates = np.zeros((no_candidates, 4), dtype=np.float32)
 for i in range(no_candidates):
     bbox = candidates[i]
@@ -101,7 +106,6 @@ region_proposals = tf.image.crop_and_resize(tf_image,
 )
 region_proposals = vgg16.preprocess_input(region_proposals)
 print('Done preprocessing image')
-BATCH_SIZE = 100
 rp_sequence = RegionProposalSequence(
     region_proposals,
     norm_candidates,
@@ -197,7 +201,9 @@ refined_candidates[:, [Y_1, Y_2]] /= HEIGHT
 selected_indices = tf.image.non_max_suppression(
     boxes=refined_candidates,
     scores=pred[1].flatten(),
-    max_output_size=10
+    max_output_size=20,
+    iou_threshold=0.7,
+    score_threshold=0.6
 )
 selected_boxes = tf.gather(refined_candidates, selected_indices)
 refined_candidates[:, [X_1, X_2]] *= WIDTH
@@ -212,7 +218,7 @@ for i in range(len(selected_boxes)):
     y_2 = int(refined_candidates[i, Y_2])
     start = (x_1, y_1)
     end = (x_2, y_2)
-    cv.rectangle(image_scaled_copy, start, end, (255, 0, 0), 3)
+    cv.rectangle(image_scaled_copy, start, end, (255, 0, 255), 3)
 
 plt.title('NMS boxes')
 plt.imshow(image_scaled_copy)
