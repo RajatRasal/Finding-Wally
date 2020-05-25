@@ -63,18 +63,24 @@ print('Selective Search')
 candidates_path = './data/test_19_candidates'
 if os.path.lexists(candidates_path):
     with open(candidates_path, 'rb') as f:
-        candidates = pickle.load(f)
+        _candidates = pickle.load(f)
 else:
-    candidates = find_candidates(image_scaled)
+    _candidates = find_candidates(image_scaled)
     with open(candidates_path, 'wb') as f:
         pickle.dump(candidates, f)
 print('Done Selective Search')
+
+candidates = []
+for i in range(len(_candidates)):
+    bbox = _candidates[i]
+    if (50 < bbox.w < 150) and (50 < bbox.h < 150):
+        candidates.append(bbox)
 
 print('Preprocess image')
 # Normalise candidate box coordindates and put 
 #  into tf.image required format -> [y1, x1, y2, x2]
 print(len(candidates))
-no_candidates = 100  # len(candidates)
+no_candidates = 1000  # len(candidates)
 norm_candidates = np.zeros((no_candidates, 4), dtype=np.float32)
 for i in range(no_candidates):
     bbox = candidates[i]
@@ -95,30 +101,27 @@ region_proposals = tf.image.crop_and_resize(tf_image,
 )
 region_proposals = vgg16.preprocess_input(region_proposals)
 print('Done preprocessing image')
-
-
-
-
-rp_sequence = RegionProposalSequence(region_proposals, norm_candidates, 100)
+BATCH_SIZE = 100
+rp_sequence = RegionProposalSequence(
+    region_proposals,
+    norm_candidates,
+    BATCH_SIZE
+)
 
 # Load model
 saved_model_path = './saved_model'
 restored_model = load_model(saved_model_path)
 
 # Pass each image into model
-pred = restored_model.predict(rp_sequence, verbose=1)  # , workers=4)
+# pred = restored_model.predict_on_batch(
+#     region_proposals,
+#     batch_size=batch_size
+# )
+pred = restored_model.predict(rp_sequence, verbose=1, workers=4)
 offset = pred[0]
 label = pred[1]
 print(pred[0].shape)
 print(pred[1].shape)
-
-# Refine the bounding box estimation
-# norm_candidates[:, X_2] = norm_candidates[:, X_1] + offset[:, T_W]
-# norm_candidates[:, Y_2] = norm_candidates[:, Y_1] + offset[:, T_Y]
-# norm_candidates[:, X_1] += offset[:, T_X]
-# norm_candidates[:, Y_1] += offset[:, T_Y]
-
-# norm_candidates[:, [X_1, X_2]] = norm_candidates[:, [X_2, X_1]]
 
 # Filter by labels which have a high prob of being Wally
 label[label >= THRESHOLD] = 1
@@ -127,74 +130,90 @@ mask = label.astype('int').flatten()
 indices = np.argwhere(mask).flatten()
 print(f'Before: {mask.shape}')
 print(f'After: {indices.shape}')
-# target_bboxes = norm_candidates[mask, :].astype('int')
 
-# print(tf_image.dtype)
-# print(norm_candidates)
+# Un-normalise bounding boxes
+refined_candidates = norm_candidates.copy()
+refined_candidates[:, [X_1, X_2]] *= WIDTH
+refined_candidates[:, [Y_1, Y_2]] *= HEIGHT
+# Original width
+width = refined_candidates[:, X_2] - refined_candidates[:, X_1]
+height = refined_candidates[:, Y_2] - refined_candidates[:, Y_1]
+# Calculate center 
+center_x = refined_candidates[:, X_1] + width / 2
+center_y = refined_candidates[:, Y_1] + height / 2
 
-# int(image_scaled.shape)
+image_scaled_copy = image_scaled.copy()
 
-for i in indices[40:50]:
-    x_1 = int(norm_candidates[i, X_1] * WIDTH)
-    y_1 = int(norm_candidates[i, Y_1] * HEIGHT)
-    x_2 = int(norm_candidates[i, X_2] * WIDTH)
-    y_2 = int(norm_candidates[i, Y_2] * HEIGHT)
+# Plot original bboxes on image in blue
+for i in indices:  # [50:60]:
+    x_1 = int(refined_candidates[i, X_1])
+    y_1 = int(refined_candidates[i, Y_1])
+    x_2 = int(refined_candidates[i, X_2])
+    y_2 = int(refined_candidates[i, Y_2])
     start = (x_1, y_1)
     end = (x_2, y_2)
-    # print(start)
-    # print(end)
-    cv.rectangle(image_scaled, start, end, (0, 0, 255), 2)
+    # print(i, start, end)
+    cv.rectangle(image_scaled_copy, start, end, (0, 0, 255), 2)
 
 # Refine the bounding box estimation
-# norm_candidates[:, X_2] = norm_candidates[:, X_1] + offset[:, T_W]
-# norm_candidates[:, Y_2] = norm_candidates[:, Y_1] + offset[:, T_Y]
-# norm_candidates[:, X_1] += offset[:, T_X]
-# norm_candidates[:, Y_1] += offset[:, T_Y]
+# LilianWeng blog
+# Refined center coordinate
+center_x += width * offset[:, T_X]
+center_y += height * offset[:, T_Y]
+# Refined Width estimation 
+refined_width = width * 2 ** offset[:, T_W]
+refined_height = height * 2 ** offset[:, T_H]
+# Update top-left coordinate
+refined_candidates[:, X_1] = center_x - refined_width / 2
+refined_candidates[:, Y_1] = center_y - refined_height / 2
+# Update bottom-right coordinate
+refined_candidates[:, X_2] = center_x + refined_width / 2
+refined_candidates[:, Y_2] = center_y + refined_height / 2
 
-refined_candidates = np.zeros(norm_candidates.shape)
-width = norm_candidates[:, X_2] - norm_candidates[:, X_1]
-height = norm_candidates[:, Y_2] - norm_candidates[:, Y_1]
-refined_candidates[:, X_1] = width * offset[:, X_1] + norm_candidates[:, X_1]
-refined_candidates[:, Y_1] = height * offset[:, Y_1] + norm_candidates[:, Y_1]
-refined_width = width * np.square(offset[:, T_X])
-refined_height = height * np.square(offset[:, T_Y])
-refined_candidates[:, X_2] = norm_candidates[:, X_1] + refined_width
-refined_candidates[:, Y_2] = norm_candidates[:, Y_2] + refined_height
-
-plt.imshow(image_scaled)
+plt.title('Old')
+plt.imshow(image_scaled_copy)
 plt.show()
 
-for i in indices[40:50]:
-    x_1 = int(refined_candidates[i, X_1] * WIDTH)
-    y_1 = int(refined_candidates[i, Y_1] * HEIGHT)
-    x_2 = int(refined_candidates[i, X_2] * WIDTH)
-    y_2 = int(refined_candidates[i, Y_2] * HEIGHT)
+for i in indices:  # [50:60]:
+    x_1 = int(refined_candidates[i, X_1])
+    y_1 = int(refined_candidates[i, Y_1])
+    x_2 = int(refined_candidates[i, X_2])
+    y_2 = int(refined_candidates[i, Y_2])
     start = (x_1, y_1)
     end = (x_2, y_2)
-    # print(start)
-    # print(end)
-    cv.rectangle(image_scaled, start, end, (0, 255, 0), 2)
+    # print(i, start, end)
+    cv.rectangle(image_scaled_copy, start, end, (255, 0, 0), 3)
 
-plt.imshow(image_scaled)
+plt.title('New')
+plt.imshow(image_scaled_copy)
 plt.show()
 # Get predictions - select highest regions of confidence (nms)
 #  + unmangle bounding box prediction
 # Add offsets to normalised region proposals
 
-"""
-refined_candidates = np.zeros(norm_candidates.shape)
-width = norm_candidates[:, X_2] - norm_candidates[:, X_1]
-height = norm_candidates[:, Y_2] - norm_candidates[:, Y_1]
-# Centralise norm_candidates
-center_x = norm_candidates[:, X_1] + width / 2 
-center_y = norm_candidates[:, Y_1] + height / 2
-refined_center_x = width * offset[:, X_1] + center_x 
-refined_center_y = height * offset[:, Y_1] + center_y 
-refined_width = width * np.square(offset[:, T_X])
-refined_height = height * np.square(offset[:, T_Y])
+# Non-maximum suppression
+refined_candidates[:, [X_1, X_2]] /= WIDTH
+refined_candidates[:, [Y_1, Y_2]] /= HEIGHT
+selected_indices = tf.image.non_max_suppression(
+    boxes=refined_candidates,
+    scores=pred[1].flatten(),
+    max_output_size=10
+)
+selected_boxes = tf.gather(refined_candidates, selected_indices)
+refined_candidates[:, [X_1, X_2]] *= WIDTH
+refined_candidates[:, [Y_1, Y_2]] *= HEIGHT
 
-refined_candidates[:, X_1] = refined_center_x - refined_width / 2
-refined_candidates[:, Y_1] = refined_center_y - refined_height / 2
-refined_candidates[:, X_2] = refined_center_x + refined_width / 2
-refined_candidates[:, Y_2] = refined_center_y + refined_height / 2
-"""
+image_scaled_copy = image_scaled.copy() 
+
+for i in range(len(selected_boxes)):
+    x_1 = int(refined_candidates[i, X_1])
+    y_1 = int(refined_candidates[i, Y_1])
+    x_2 = int(refined_candidates[i, X_2])
+    y_2 = int(refined_candidates[i, Y_2])
+    start = (x_1, y_1)
+    end = (x_2, y_2)
+    cv.rectangle(image_scaled_copy, start, end, (255, 0, 0), 3)
+
+plt.title('NMS boxes')
+plt.imshow(image_scaled_copy)
+plt.show()
