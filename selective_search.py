@@ -122,41 +122,25 @@ def apply_offset(centered_bbox, t_x, t_y, t_w, t_h):
 
 
 if __name__ == '__main__':
-    # TODO: Remove relative imports
-    import time
-    import re
+    columns = ['actual', 'x', 'y', 'w', 'h', 'fg']
+    bboxes = []
+    iou_threshold = 0.5
 
-    start_time = time.time()
-
-    # Region not centralised
-    columns = ['actual', 'x', 'y', 'w', 'h', 'fg', 't_x', 't_y', 't_w', 't_h']
-    data = pd.DataFrame(columns=columns)
-
-    # nos = [12, 14, 15, 18, 19, 1, 20, 21, 22, 24, 25, 26, 27, 2, 4, 5, 7, 8, 9]
-    nos = []
-
-    pattern = re.compile(r'(\d{1,2})(\_found.jpg)')
-    for img in os.listdir('./data/original-images/'):
-        match = pattern.search(img)
-        if match: nos.append(int(match.group(1)))
-
-    print(f'Numbers found: {nos}')
-
-    for no in nos:
-        print(f'no: {no}')
+    for no in range(1, 56):
         full_img_path = f'./data/original-images/{no}.jpg'
         bounded_img_path = f'./data/original-images/{no}_found.jpg'
+
+        if not (os.path.lexists(full_img_path) and os.path.lexists(bounded_img_path)):
+            print(f'Not found: {no}')
+            continue
 
         try:
             full_img = cv.imread(full_img_path, cv.IMREAD_COLOR)
             bounded_img = cv.imread(bounded_img_path, cv.IMREAD_COLOR)
-        except Exception:
-            full_img_path[-3:] = 'png'
-            bounded_img_path[-3:] = 'png'
-            full_img = cv.imread(full_img_path, cv.IMREAD_COLOR)
-            bounded_img = cv.imread(bounded_img_path, cv.IMREAD_COLOR)
+        except Exception as e:
+            print(f'Not found: {no}')
+            continue
 
-        print('scaling')
         # Scale down and true region bounding box
         # Many images are very big and will result in too many bounding boxes.
         # We resize each image to height * width(=1000) to reduce the number of
@@ -165,13 +149,13 @@ if __name__ == '__main__':
         scale = new_width / full_img.shape[1]
         full_img_scaled = scale_image_in_aspect_ratio(full_img, new_width)
 
-        original_box = find_image_coordinate(full_img, bounded_img)
-        original_box_scaled = BBox(x=int(original_box.x * scale),
-                                   y=int(original_box.y * scale),
-                                   w=int(original_box.w * scale),
-                                   h=int(original_box.h * scale))
-
-        print('regions')
+        gt_bbox = find_image_coordinate(full_img, bounded_img)
+        gt_bbox_scaled = BBox(x=int(gt_bbox.x * scale),
+            y=int(gt_bbox.y * scale),
+            w=int(gt_bbox.w * scale),
+            h=int(gt_bbox.h * scale)
+        )
+        
         # Region Proposals
         if os.path.lexists(f'./data/original-images/{no}_candidates'):
             with open(f'./data/original-images/{no}_candidates', 'rb') as f:
@@ -182,6 +166,21 @@ if __name__ == '__main__':
             with open(f'./data/original-images/{no}_candidates', 'wb') as f:
                 pickle.dump(candidates, f)
 
+        l_width = 0.5 * gt_bbox.w 
+        u_width = 1.5 * gt_bbox.w 
+        l_height = 0.5 * gt_bbox.h 
+        u_height = 1.5 * gt_bbox.h
+
+        for bbox in candidates:
+            if (l_width < bbox.w < u_width) and (l_height < bbox.h < u_height):
+                iou_score = iou(gt_bbox_scaled, bbox)
+                fg = iou_score >= iou_threshold
+                bboxes.append([full_img_path, bbox.x, bbox.y, bbox.w, bbox.h, fg])
+        
+    data = pd.DataFrame(bboxes, columns=columns)
+    data.to_csv('./data/data.csv')
+
+"""
         print('IOU')
         # Visualising Proposed Regions
         colour = (0, 0, 225)
@@ -191,21 +190,19 @@ if __name__ == '__main__':
         print('Proposals:', len(candidates))
         candidates2 = []
         for proposal in candidates:
-            if (0.5 * original_box.w < proposal.w < 2 * original_box.w) and \
-               (0.5 * original_box.h < proposal.h < 2 * original_box.h):
+            if (0.5 * gt_box.w < proposal.w < 2 * gt_box.w) and \
+               (0.5 * gt_box.h < proposal.h < 2 * gt_box.h):
                 candidates2.append(proposal)
         print('After Proposals:', len(candidates2))
         candidates = candidates2
 
         lower = 0.4
         lower2 = 0.2
-        tp, _ = iou_thresholding(candidates, original_box_scaled, lower, 1)
-        tp2, tn = iou_thresholding(candidates, original_box_scaled, lower2, lower)
-        """
+        tp, _ = iou_thresholding(candidates, gt_box_scaled, lower, 1)
+        tp2, tn = iou_thresholding(candidates, gt_box_scaled, lower2, lower)
         print('True positives:', len(tp))
         print('Slightly True positives:', len(tp2))
         print('True negatives:', len(tn))
-        """
 
         random.shuffle(tp2)
         random.shuffle(tn)
@@ -213,7 +210,7 @@ if __name__ == '__main__':
         tp2 = tp2[:max(50, int(len(tp) * 2))]
         tn = tn[:max(50, int(len(tp) * 2))]
 
-        center_original_bbox = center_bbox(original_box_scaled)
+        center_original_bbox = center_bbox(gt_box_scaled)
         # cv.rectangle(full_img_scaled, start, end, colour, thickness)
         # print(f'center box: {center_original_bbox}')
         print(f'tp: {len(tp)}')
@@ -257,3 +254,4 @@ if __name__ == '__main__':
     print('Total Proposals:', data.shape)
 
     data.to_csv('./data/data.csv')
+"""
