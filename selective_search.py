@@ -150,11 +150,6 @@ if __name__ == '__main__':
         full_img_scaled = scale_image_in_aspect_ratio(full_img, new_width)
 
         gt_bbox = find_image_coordinate(full_img, bounded_img)
-        gt_bbox_scaled = BBox(x=int(gt_bbox.x * scale),
-            y=int(gt_bbox.y * scale),
-            w=int(gt_bbox.w * scale),
-            h=int(gt_bbox.h * scale)
-        )
         
         # Region Proposals
         if os.path.lexists(f'./data/original-images/{no}_candidates'):
@@ -162,20 +157,24 @@ if __name__ == '__main__':
                 candidates = pickle.load(f)
         else:
             candidates = find_candidates(full_img_scaled)
-
             with open(f'./data/original-images/{no}_candidates', 'wb') as f:
                 pickle.dump(candidates, f)
 
         l_width = 0.5 * gt_bbox.w 
-        u_width = 1.5 * gt_bbox.w 
+        u_width = 5.0 * gt_bbox.w 
         l_height = 0.5 * gt_bbox.h 
-        u_height = 1.5 * gt_bbox.h
+        u_height = 3.0 * gt_bbox.h
 
         for bbox in candidates:
-            if (l_width < bbox.w < u_width) and (l_height < bbox.h < u_height):
-                iou_score = iou(gt_bbox_scaled, bbox)
+            x = bbox.x / scale
+            y = bbox.y / scale
+            w = bbox.w / scale
+            h = bbox.h / scale
+            if (l_width <= w <= u_width) and (l_height <= h <= u_height):
+                _bbox = BBox(x, y, w, h)
+                iou_score = iou(gt_bbox, _bbox)
                 fg = iou_score >= iou_threshold
-                bboxes.append([full_img_path, bbox.x, bbox.y, bbox.w, bbox.h, fg])
+                bboxes.append([full_img_path, x, y, w, h, fg])
         
     data = pd.DataFrame(bboxes, columns=columns)
     data.to_csv('./data/data.csv')
