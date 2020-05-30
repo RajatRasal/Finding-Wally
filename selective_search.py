@@ -122,9 +122,15 @@ def apply_offset(centered_bbox, t_x, t_y, t_w, t_h):
 
 
 if __name__ == '__main__':
-    columns = ['actual', 'x', 'y', 'w', 'h', 'fg']
+    COLUMNS = ['actual', 'x', 'y', 'w', 'h', 'fg']
+    WIDTH = 1000
+    IOU_THRESHOLD = 0.4
+    LOWER_WIDTH_SCALE = 0.5
+    UPPER_WIDTH_SCALE = 5.0
+    LOWER_HEIGHT_SCALE = 0.5
+    UPPER_HEIGHT_SCALE = 3.0
+
     bboxes = []
-    iou_threshold = 0.5
 
     for no in range(1, 56):
         full_img_path = f'./data/original-images/{no}.jpg'
@@ -141,15 +147,15 @@ if __name__ == '__main__':
             print(f'Not found: {no}')
             continue
 
+        # Ground truth bounding box coordinates - no scaling
+        gt_bbox = find_image_coordinate(full_img, bounded_img)
+
         # Scale down and true region bounding box
         # Many images are very big and will result in too many bounding boxes.
         # We resize each image to height * width(=1000) to reduce the number of
         #   region proposals.
-        new_width = 1000
-        scale = new_width / full_img.shape[1]
-        full_img_scaled = scale_image_in_aspect_ratio(full_img, new_width)
-
-        gt_bbox = find_image_coordinate(full_img, bounded_img)
+        scale = WIDTH / full_img.shape[1]
+        full_img_scaled = scale_image_in_aspect_ratio(full_img, WIDTH)
         
         # Region Proposals
         if os.path.lexists(f'./data/original-images/{no}_candidates'):
@@ -160,23 +166,25 @@ if __name__ == '__main__':
             with open(f'./data/original-images/{no}_candidates', 'wb') as f:
                 pickle.dump(candidates, f)
 
-        l_width = 0.5 * gt_bbox.w 
-        u_width = 5.0 * gt_bbox.w 
-        l_height = 0.5 * gt_bbox.h 
-        u_height = 3.0 * gt_bbox.h
+        # Bounds for dimensions of bounding boxes
+        lower_width = LOWER_WIDTH_SCALE * gt_bbox.w
+        upper_width = UPPER_WIDTH_SCALE * gt_bbox.w
+        lower_height = LOWER_HEIGHT_SCALE * gt_bbox.h
+        upper_height = UPPER_HEIGHT_SCALE * gt_bbox.h
 
         for bbox in candidates:
+            # Upscale bounding box coordinates
             x = bbox.x / scale
             y = bbox.y / scale
             w = bbox.w / scale
             h = bbox.h / scale
-            if (l_width <= w <= u_width) and (l_height <= h <= u_height):
+            if (lower_width <= w <= upper_width) and (lower_height <= h <= upper_height):
                 _bbox = BBox(x, y, w, h)
                 iou_score = iou(gt_bbox, _bbox)
-                fg = iou_score >= iou_threshold
+                fg = iou_score >= IOU_THRESHOLD
                 bboxes.append([full_img_path, x, y, w, h, fg])
         
-    data = pd.DataFrame(bboxes, columns=columns)
+    data = pd.DataFrame(bboxes, columns=COLUMNS)
     data.to_csv('./data/data.csv')
 
 """
