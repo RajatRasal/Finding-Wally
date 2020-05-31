@@ -122,7 +122,7 @@ def apply_offset(centered_bbox, t_x, t_y, t_w, t_h):
 
 
 if __name__ == '__main__':
-    COLUMNS = ['actual', 'x', 'y', 'w', 'h', 'fg']
+    COLUMNS = ['actual', 'image_no', 'x', 'y', 'w', 'h', 'x_t', 'y_t', 'w_t', 'h_t', 'fg']
     WIDTH = 1000
     IOU_THRESHOLD = 0.4
     LOWER_WIDTH_SCALE = 0.5
@@ -149,6 +149,10 @@ if __name__ == '__main__':
 
         # Ground truth bounding box coordinates - no scaling
         gt_bbox = find_image_coordinate(full_img, bounded_img)
+        x_t = gt_bbox.x
+        y_t = gt_bbox.y
+        w_t = gt_bbox.w
+        h_t = gt_bbox.h
 
         # Scale down and true region bounding box
         # Many images are very big and will result in too many bounding boxes.
@@ -181,84 +185,8 @@ if __name__ == '__main__':
             if (lower_width <= w <= upper_width) and (lower_height <= h <= upper_height):
                 _bbox = BBox(x, y, w, h)
                 iou_score = iou(gt_bbox, _bbox)
-                fg = iou_score >= IOU_THRESHOLD
-                bboxes.append([full_img_path, x, y, w, h, fg])
+                fg = int(iou_score >= IOU_THRESHOLD) 
+                bboxes.append([full_img_path, no, x, y, w, h, x_t, y_t, w_t, h_t, fg])
         
     data = pd.DataFrame(bboxes, columns=COLUMNS)
     data.to_csv('./data/data.csv')
-
-"""
-        print('IOU')
-        # Visualising Proposed Regions
-        colour = (0, 0, 225)
-        thickness = 1
-
-        # Filter out very large or small candidate images
-        print('Proposals:', len(candidates))
-        candidates2 = []
-        for proposal in candidates:
-            if (0.5 * gt_box.w < proposal.w < 2 * gt_box.w) and \
-               (0.5 * gt_box.h < proposal.h < 2 * gt_box.h):
-                candidates2.append(proposal)
-        print('After Proposals:', len(candidates2))
-        candidates = candidates2
-
-        lower = 0.4
-        lower2 = 0.2
-        tp, _ = iou_thresholding(candidates, gt_box_scaled, lower, 1)
-        tp2, tn = iou_thresholding(candidates, gt_box_scaled, lower2, lower)
-        print('True positives:', len(tp))
-        print('Slightly True positives:', len(tp2))
-        print('True negatives:', len(tn))
-
-        random.shuffle(tp2)
-        random.shuffle(tn)
-
-        tp2 = tp2[:max(50, int(len(tp) * 2))]
-        tn = tn[:max(50, int(len(tp) * 2))]
-
-        center_original_bbox = center_bbox(gt_box_scaled)
-        # cv.rectangle(full_img_scaled, start, end, colour, thickness)
-        # print(f'center box: {center_original_bbox}')
-        print(f'tp: {len(tp)}')
-
-        for bbox in tp:
-            # Plot Proposed Region
-            centered_bbox = center_bbox(bbox)
-            cv.rectangle(full_img_scaled, (bbox.x, bbox.y),
-                         (bbox.x + bbox.w, bbox.y + bbox.h), (0, 255, 255), thickness)
-            # print(f'TP Center BBOX: {centered_bbox}')
-
-            # Plot Proposed Region + Offset
-            t_x, t_y, t_w, t_h = calculate_offsets(center_original_bbox, centered_bbox)
-            # print(t_x, t_y, t_w, t_h)
-            shifted_bbox = apply_offset(centered_bbox, t_x, t_y, t_w, t_h)
-            start_new = (int(shifted_bbox.x - shifted_bbox.w // 2),
-                         int(shifted_bbox.y - shifted_bbox.h // 2))
-            end_new = (int(shifted_bbox.x + shifted_bbox.w // 2),
-                       int(shifted_bbox.y + shifted_bbox.h // 2))
-            cv.rectangle(full_img_scaled, start_new, end_new, (0, 0, 0), thickness)
-            data = data.append({'actual': no, 'x': bbox.x, 'y': bbox.y,
-                                'w': bbox.w, 'h': bbox.h, 'fg': 1, 't_x': t_x,
-                                't_y': t_y, 't_w': t_w, 't_h': t_h},
-                               ignore_index=True)
-
-        # plt.imshow(full_img_scaled)
-        # plt.show()
-
-        for bbox in tp2 + tn:
-            data = data.append({'actual': no, 'x': bbox.x, 'y': bbox.y,
-                                'w': bbox.w, 'h': bbox.h, 'fg': 0, 't_x': None,
-                                't_y': None, 't_w': None, 't_h': None},
-                               ignore_index=True)
-
-        # print(data.shape)
-
-        # break
-        # print('Time taken:', time.time() - start_time)
-
-    print('No of Foreground images:', data.fg.sum())
-    print('Total Proposals:', data.shape)
-
-    data.to_csv('./data/data.csv')
-"""
