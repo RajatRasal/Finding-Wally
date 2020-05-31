@@ -11,12 +11,14 @@ from tensorflow.keras.applications import (VGG16, ResNet50, ResNet152,
     InceptionResNetV2, DenseNet121
 )
 from tensorflow.keras.layers import Dense, Dropout, GlobalAveragePooling2D
+from tensorflow.keras.optimizers import Adam, SGD
 from tensorflow.keras.regularizers import l1, l2
 
 
 ###############################################################################
 # Preprocessing
 ###############################################################################
+"""
 def preprocess_data():
     # TODO: Abstract out preprocessing capabilities from selective_search.py
     pass
@@ -28,6 +30,53 @@ def train_test_split(x_train, y_train, x_test, y_test, processors=2,
     #  with preprocess data
     # should call 
     pass
+"""
+
+def load_csv_dataset(csv_file_path, test_images, reader='pd',
+    image_col='image_no',
+):
+    if reader == 'pd':
+        # Keep index column 
+        df = pd.read_csv(csv_file_path, index_col=0)
+        train, test = __split_df_data_by_images(df, test_images, image_col)
+    elif reader == 'tf':
+        COL_TYPES = [tf.string, tf.int32, tf.float32, tf.float32, \
+            tf.float32, tf.float32, tf.float32, tf.float32, tf.float32, \
+            tf.float32, tf.int32
+        ]
+        tf_data = tf.data.experimental.CsvDataset(
+            filenames=csv_file_path,
+            record_defaults=COL_TYPES,
+            select_cols=range(1, len(COL_TYPES)+1),  # Drop index column
+            header=True
+        )
+        _test_images = tf.constant(test_images)
+        train, test = __split_tf_data_by_images(tf_data, _test_images, image_col)
+    else:
+        assert NotImplementedError, 'This reader does not exist yet'
+    return train, test
+
+def __split_df_data_by_images(data, test_images, images_col='image_no'):
+    test_mask = data[images_col].isin(test_images)
+    test_data = data[test_mask]
+    train_data = data[~test_mask]
+
+    assert train_data.shape[0] + test_data.shape[0] == data.shape[0]
+    assert train_data.shape[0] > test_data.shape[0] * 3
+    print(train_data.shape[0], test_data.shape[0], data.shape[0])
+
+    return train_data, test_data
+
+def __split_tf_data_by_images(data, test_images, image_col='image_no'):
+    _test_images = tf.constant(test_images)
+    test = data.filter(
+        lambda *row: tf.reduce_any(tf.equal(row[1], _test_images))
+    )
+    train = data.filter(
+        lambda *row: tf.reduce_all(tf.not_equal(row[1], _test_images))
+    )
+    
+    return train, test
 
 def preprocess_data(x_train, y_train, x_test, y_test, processors=2,
     batch_size_per_processor=64, cache=True, seed=42
@@ -48,19 +97,19 @@ def preprocess_data(x_train, y_train, x_test, y_test, processors=2,
         return image, label
 
     batch_size = processors * batch_size_per_processor
+    parallel_calls = tf.data.experimental.AUTOTUNE
+    SHUFFLE_BUFFER = batch_size_per_processor
 
     train_dataset = tf.data.Dataset.from_tensor_slices((x_train, y_train)) \
-        .map(vgg_preprocess) \
-        .shuffle(x_train.shape[0]) \
-        .batch(batch_size, drop_remainder=True)
+        .map(vgg_preprocess, num_parallel_calls=parallel_calls) \
+        .batch(batch_size, drop_remainder=True) \
+        .cache() \
+        .shuffle(SHUFFLE_BUFFER)
     test_dataset = tf.data.Dataset.from_tensor_slices((x_test, y_test)) \
-        .map(vgg_preprocess) \
-        .shuffle(x_test.shape[0]) \
-        .batch(batch_size, drop_remainder=True)
-
-    if cache:
-        train_dataset = train_dataset.cache()
-        test_dataset = test_dataset.cache()
+        .map(vgg_preprocess, num_parallel_calls=parallel_calls) \
+        .batch(batch_size, drop_remainder=True) \
+        .cache() \
+        .shuffle(SHUFFLE_BUFFER)
 
     return train_dataset, test_dataset
 
@@ -239,3 +288,18 @@ def load_model(saved_model_path):
         compile=True,
     )
     return model
+
+
+if __name__ == '__main__':
+    CSV_FILE_PATH = './data/data.csv'
+    TEST_IMAGES = [19, 31, 49, 20, 56, 21]
+
+    train, test = load_csv_dataset(CSV_FILE_PATH, TEST_IMAGES, reader='tf')
+    """
+    t1 = len(list(test.as_numpy_iterator()))
+    print(t1)
+    t2 = len(list(train.as_numpy_iterator()))
+    print(t2)
+    assert t1 == 160312 
+    assert t2 == 1391841
+    """
