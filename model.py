@@ -303,10 +303,14 @@ if __name__ == '__main__':
     TEST_IMAGES = [19, 31, 49, 20, 56, 21]
 
     BATCH_SIZE = 128
-    BUFFER_SIZE = BATCH_SIZE * 3
+    BUFFER_SIZE = BATCH_SIZE * 5
     SEED = 42
     TP_BATCH_FACTOR = 0.25
     TP_BATCH_SIZE = int(BATCH_SIZE * TP_BATCH_FACTOR)
+
+    LABEL_COL = -1
+    WALLY = 1 
+    BACKGROUND = 0
 
     tf.random.set_seed(SEED)
 
@@ -316,51 +320,46 @@ if __name__ == '__main__':
     )
 
     train, test = load_csv_dataset(CSV_FILE_PATH, TEST_IMAGES, reader='tf')
-
-    def map_decorator(func):
-        def wrapper(batch_1, batch_2):
-            # Use a tf.py_function to prevent auto-graph from compiling the method
-            return tf.py_function(
-                func,
-                inp=[batch_1, batch_2],
-                Tout=COL_TYPES
-            )
-        return wrapper
-
-    # @map_decorator
-    def concat(*args):  # batch_1, batch_2):
-        batch_1, batch_2 = args
-        return (tf.concat([_tp, _tn], 0) for _tp, _tn in zip(batch_1, batch_2))
-
-    train = train.shuffle(BUFFER_SIZE)
-    train_positive = train.filter(lambda *row: tf.math.equal(row[-1], 1))
-    train_negative = train.filter(lambda *row: tf.math.equal(row[-1], 0))
-    train_positive_batch = train_positive.batch(TP_BATCH_SIZE)
-    train_negative_batch = train_negative.batch(BATCH_SIZE - TP_BATCH_SIZE)
-    train = tf.data.experimental.CsvDataset.zip((train_positive_batch, train_negative_batch))
-    train = train.cache()
-
     """
-    train = train.map(lambda *args: tf.py_function(concat, args, COL_TYPES))
-        lambda tp, tn: (tf.concat([col_tp, col_tn], 0) for col_tp, col_tn in zip(tp, tn)),
-        num_parallel_calls=tf.data.experimental.AUTOTUNE
+    x_train, y_train = xy_split(train)
+    train = prepare_batches(x_train, y_train,
+        buffer_size=BUFFER_SIZE,
+        batch_size=BATCH_SIZE,
+        label_ratio=TP_BATCH_FACTOR
     )
     """
-    train = train.prefetch(tf.data.experimental.AUTOTUNE)
+
+    train = train.shuffle(BUFFER_SIZE)
+
+    # In each batch there should be 25% 1s and 75% 0s.
+    train_positive = train.filter(
+        lambda *row: tf.math.equal(row[LABEL_COL], WALLY)
+    )
+    train_negative = train.filter(
+        lambda *row: tf.math.equal(row[LABEL_COL], BACKGROUND)
+    )
+    train_positive_batch = train_positive.batch(TP_BATCH_SIZE)
+    train_negative_batch = train_negative.batch(BATCH_SIZE - TP_BATCH_SIZE)
+
+    # Get a single batch from train_positive and train_negative and
+    #   concatenated into a single batch.
+    batch_zip = (train_positive_batch, train_negative_batch)
+
+    @tf.function
+    def merge_csv_batches(batch_1, batch_2):
+        cols = []
+        for col_1, col_2 in zip(batch_1, batch_2):
+            cols.append(tf.concat([col_1, col_2], 0))
+        return cols
+
+    train = tf.data.experimental.CsvDataset.zip(batch_zip) \
+        .cache() \
+        .map(merge_csv_batches, tf.data.experimental.AUTOTUNE) \
+        .prefetch(tf.data.experimental.AUTOTUNE)
 
     for i, batch in enumerate(train):
-        print(i, batch)
-        break
-    """
-    """
+        print(i, batch[0].shape, Counter(list(batch[1].numpy())))
 
-    """
-    for i, (tp, tn) in enumerate(train):
-        print(tf.concat([tp[0], tn[0]], 0))
-        print(i, tp[0].shape, tn[1].shape, Counter(list(tp[1].numpy())))
-        print(tp.concatenate(tn))
-        break
-    """
     """
     x_train, y_train = batch_dataset(train, balabel_ratio=0.25)
     t1 = len(list(test.as_numpy_iterator()))
