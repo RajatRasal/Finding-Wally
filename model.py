@@ -68,14 +68,12 @@ def __split_df_data_by_images(data, test_images, images_col='image_no'):
     return train_data, test_data
 
 def __split_tf_data_by_images(data, test_images, image_col='image_no'):
-    _test_images = tf.constant(test_images)
     test = data.filter(
-        lambda *row: tf.reduce_any(tf.equal(row[1], _test_images))
+        lambda *row: tf.reduce_any(tf.equal(row[1], test_images))
     )
     train = data.filter(
-        lambda *row: tf.reduce_all(tf.not_equal(row[1], _test_images))
+        lambda *row: tf.reduce_all(tf.not_equal(row[1], test_images))
     )
-    
     return train, test
 
 def preprocess_data(x_train, y_train, x_test, y_test, processors=2,
@@ -112,6 +110,14 @@ def preprocess_data(x_train, y_train, x_test, y_test, processors=2,
         .shuffle(SHUFFLE_BUFFER)
 
     return train_dataset, test_dataset
+
+def apply_batching(dataset, processors=2, batch_size_per_processor=64,
+    class_ratio=0.25
+):
+    tf.random.set_seed(seed)
+
+
+
 
 ###############################################################################
 # Backbone Wrappers
@@ -291,11 +297,72 @@ def load_model(saved_model_path):
 
 
 if __name__ == '__main__':
+    from collections import Counter
+
     CSV_FILE_PATH = './data/data.csv'
     TEST_IMAGES = [19, 31, 49, 20, 56, 21]
 
+    BATCH_SIZE = 128
+    BUFFER_SIZE = BATCH_SIZE * 3
+    SEED = 42
+    TP_BATCH_FACTOR = 0.25
+    TP_BATCH_SIZE = int(BATCH_SIZE * TP_BATCH_FACTOR)
+
+    tf.random.set_seed(SEED)
+
+    COL_TYPES = (tf.string, tf.int32, tf.float32, tf.float32, \
+        tf.float32, tf.float32, tf.float32, tf.float32, tf.float32, \
+        tf.float32, tf.int32
+    )
+
     train, test = load_csv_dataset(CSV_FILE_PATH, TEST_IMAGES, reader='tf')
+
+    def map_decorator(func):
+        def wrapper(batch_1, batch_2):
+            # Use a tf.py_function to prevent auto-graph from compiling the method
+            return tf.py_function(
+                func,
+                inp=[batch_1, batch_2],
+                Tout=COL_TYPES
+            )
+        return wrapper
+
+    # @map_decorator
+    def concat(*args):  # batch_1, batch_2):
+        batch_1, batch_2 = args
+        return (tf.concat([_tp, _tn], 0) for _tp, _tn in zip(batch_1, batch_2))
+
+    train = train.shuffle(BUFFER_SIZE)
+    train_positive = train.filter(lambda *row: tf.math.equal(row[-1], 1))
+    train_negative = train.filter(lambda *row: tf.math.equal(row[-1], 0))
+    train_positive_batch = train_positive.batch(TP_BATCH_SIZE)
+    train_negative_batch = train_negative.batch(BATCH_SIZE - TP_BATCH_SIZE)
+    train = tf.data.experimental.CsvDataset.zip((train_positive_batch, train_negative_batch))
+    train = train.cache()
+
     """
+    train = train.map(lambda *args: tf.py_function(concat, args, COL_TYPES))
+        lambda tp, tn: (tf.concat([col_tp, col_tn], 0) for col_tp, col_tn in zip(tp, tn)),
+        num_parallel_calls=tf.data.experimental.AUTOTUNE
+    )
+    """
+    train = train.prefetch(tf.data.experimental.AUTOTUNE)
+
+    for i, batch in enumerate(train):
+        print(i, batch)
+        break
+    """
+    """
+
+    """
+    for i, (tp, tn) in enumerate(train):
+        print(tf.concat([tp[0], tn[0]], 0))
+        print(i, tp[0].shape, tn[1].shape, Counter(list(tp[1].numpy())))
+        print(tp.concatenate(tn))
+        break
+    """
+    """
+    x_train, y_train = batch_dataset(train, balabel_ratio=0.25)
     t1 = len(list(test.as_numpy_iterator()))
     print(t1)
     t2 = len(list(train.as_numpy_iterator()))
