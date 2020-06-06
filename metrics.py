@@ -7,7 +7,7 @@ import tensorflow as tf
 from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.metrics import f1_score as f1_score_sk
 
-from model import preprocess_data, load_model
+from model import load_model, load_csv_dataset, preprocess_dataset
 from log import image_grid, plot_to_image
 
 
@@ -18,46 +18,33 @@ parser.add_argument('-f', '--file', nargs=4, type=argparse.FileType('rb'),
     help='Training files produced by generate_dataset.py'
 )
 args = parser.parse_args()
-x_train_file, y_train_file, x_test_file, y_test_file = args.file
+# x_train_file, y_train_file, x_test_file, y_test_file = args.file
 saved_model_path = args.model
 
 restored_model = load_model(saved_model_path)
 
 print('Loading data')
-try:
-    x_train = np.load(x_train_file).astype('float16')
-    x_test = np.load(x_test_file).astype('float16')
-except Exception:
-    x_train = pickle.load(x_train_file).astype('float16')
-    x_test = pickle.load(x_test_file).astype('float16')
 
-# TODO: Remove this hack - convert RGB to BGR in selective_search.py
-B = x_test[:, :, 0]
-R = x_test[:, :, 2]
-x_test[:, :, 0] = R
-x_test[:, :, 2] = B
+CSV_FILE_PATH = './data/data.csv'
+SAVED_MODEL_PATH = './saved_model'
+TEST_IMAGES = [19, 31, 49, 20, 56, 21]
 
-y_train = pickle.load(y_train_file)
-y_test = pickle.load(y_test_file)
+train, test = load_csv_dataset(CSV_FILE_PATH, TEST_IMAGES, reader='tf')
+test = preprocess_dataset(test)
 
-y_train = y_train[1].astype('int8')
-y_test = y_test[1].astype('int8')
-print('Done loading')
-
-_, test_dataset = preprocess_data(x_train, y_train, x_test, y_test)
+model = load_model(SAVED_MODEL_PATH)
 
 result = []
 y_test = []
 
-for _x_test, _y_test in test_dataset:
-    pred = restored_model.predict(_x_test)
-    reg = pred[0]
+for _x_test, _y_test in test:
+    pred = model.predict_on_batch(_x_test)
     cls = pred[1]
-    result.append(cls.flatten())
-    y_test.append(_y_test.numpy().flatten())
+    result.extend(list(cls.flatten()))
+    y_test.extend(list(_y_test.numpy()[:, -1].flatten()))
 
-result = np.concatenate(result)
-y_test = np.concatenate(y_test)
+result = np.array(result)
+y_test = np.array(y_test)
 
 best = float('-inf') 
 
@@ -81,6 +68,7 @@ print(f'confusion matrix:\n{cm}')
 print(classification_report(best_y_test, best_result))
 
 # Log inference output to Tensorboard
+"""
 images = []
 for x, _ in test_dataset:
     images.append(x)
@@ -101,3 +89,4 @@ for i in range(0, results_count // images_in_grid):
     
     with file_writer.as_default():
         tf.summary.image("Test Data", grid, step=i)
+"""
