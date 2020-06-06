@@ -276,13 +276,13 @@ def build_model():
     do1 = Dropout(0.5, seed=41)(fc1)
     fc2 = Dense(100, activation='relu', name='additional_fc2',
         activity_regularizer=l1(0.001))(do1)
-    do1 = Dropout(0.5, seed=41)(fc2)
+    do2 = Dropout(0.5, seed=41)(fc2)
     
     # Loss function for foreground/background classification
     cls = Dense(1, activation='sigmoid', name='classifier')(do1)
     # Loss function for bounding box regression
     reg = Dense(4, activation='linear', name='regressor',
-        activity_regularizer=l2(0.1))(do1)
+        activity_regularizer=l2(10))(do2)
     
     model = Model(inputs=base_input, outputs=[reg, cls])
     return model
@@ -291,20 +291,22 @@ def rcnn_reg_loss(y_true, y_pred):
     reg_pred = y_pred
     reg_true = y_true[:, :4]
     cls_true = y_true[:, 4:]
-    # print(f'first row true: {cls_true[0]}')
+    print(f'first row true: {reg_true}, {cls_true}')
     # print(f'Pred shape: {cls_pred.shape}, Actual shape: {cls_true.shape}')
+    # reg_true = kb.clip(reg_true, kb.epsilon(), 1 - kb.epsilon())
+    # cls_true = kb.clip(cls_true, kb.epsilon(), 1 - kb.epsilon())
     foreground_loss = tf.multiply(cls_true, tf.square(reg_true - reg_pred))
     sse_loss = tf.reduce_sum(foreground_loss)
     return sse_loss
 
 def rcnn_cls_loss(y_true, y_pred):
-    _cls_pred = y_pred
-    _cls_true = y_true[:, 4:]
+    cls_pred = y_pred
+    cls_true = y_true[:, 4:]
     # print(f'Pred shape: {_cls_pred.shape}, Actual shape: {_cls_true.shape}')
-    cls_pred = kb.clip(_cls_pred, kb.epsilon(), 1 - kb.epsilon())
-    cls_true = kb.clip(_cls_true, kb.epsilon(), 1 - kb.epsilon())
-    weighted_bce_loss = -(0.3 * cls_true * kb.log(cls_true) + \
-        0.7 * (1 - cls_true) * kb.log(1 - cls_true)
+    cls_pred = kb.clip(cls_pred, kb.epsilon(), 1 - kb.epsilon())
+    cls_true = kb.clip(cls_true, kb.epsilon(), 1 - kb.epsilon())
+    weighted_bce_loss = -(0.25 * cls_true * kb.log(cls_pred) + \
+        0.75 * (1 - cls_true) * kb.log(1 - cls_pred)
     )
     return weighted_bce_loss
 
@@ -346,8 +348,7 @@ def build_and_compile_model():
     model.compile(loss=multitask_loss,
         loss_weights=[0.5, 1],
         metrics=metrics,
-        # optimizer=Adam(lr=0.00001),
-        optimizer=SGD(lr=0.00001),
+        optimizer=Adam(lr=0.0001),
     )
     return model
 
@@ -384,8 +385,8 @@ def load_model(saved_model_path):
 
 
 def preprocess_dataset(dataset):
-    BATCH_SIZE = 128
-    BUFFER_SIZE = BATCH_SIZE * 5
+    BATCH_SIZE = 64
+    BUFFER_SIZE = BATCH_SIZE * 3
     SEED = 42
     TP_BATCH_FACTOR = 0.25
     TP_BATCH_SIZE = int(BATCH_SIZE * TP_BATCH_FACTOR)
@@ -468,9 +469,13 @@ def preprocess_dataset(dataset):
     def col_to_row(image, labels):
         *offsets, fg = labels
         fg = tf.cast(fg, tf.float32)
-        labels = tf.convert_to_tensor((*offsets, fg))
+        labels = tf.stack([*offsets, fg])
         labels = tf.transpose(labels)
         return image, labels
+
+    @tf.function
+    def shuffle_batch(image, labels):
+        return image, tf.random.shuffle(labels)
 
     dataset = tf.data.experimental.CsvDataset.zip(batch_zip) \
         .map(merge_csv_batches, tf.data.experimental.AUTOTUNE) \
@@ -479,6 +484,7 @@ def preprocess_dataset(dataset):
         .map(preprocess_batch, tf.data.experimental.AUTOTUNE) \
         .map(xy_split, tf.data.experimental.AUTOTUNE) \
         .map(col_to_row, tf.data.experimental.AUTOTUNE) \
+        .map(shuffle_batch, tf.data.experimental.AUTOTUNE) \
         .prefetch(tf.data.experimental.AUTOTUNE)
 
     return dataset

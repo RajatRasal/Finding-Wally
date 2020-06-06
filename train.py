@@ -13,10 +13,10 @@ import tensorflow as tf
 import tensorflow.keras as keras
 from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.metrics import f1_score as f1_score_sk
-from tensorflow.keras.optimizers import Adam, SGD
 
 from model import (preprocess_data, build_and_compile_model, 
-    build_and_compile_distributed_model, save_model
+    build_and_compile_distributed_model, save_model, preprocess_dataset,
+    load_csv_dataset
 )
 
 
@@ -45,6 +45,7 @@ saved_model_path = args.output
 logdir = args.logdir + datetime.now().strftime('%Y%m%d-%H%M%S')
 # tensorboard_callback = keras.callbacks.TensorBoard(log_dir=logdir)
 
+"""
 x_train = pickle.load(x_train_file).astype('float64')
 x_test = pickle.load(x_test_file).astype('float64')
 _y_train = pickle.load(y_train_file)
@@ -80,6 +81,7 @@ y_test[:, 4:] = y_cls_test
 
 # print('Y train counter:', Counter(list(y_train.flatten())))
 # print('Y test counter:', Counter(list(y_test.flatten())))
+"""
 
 if dist_config_file:
     print('------------------ Distributed Training ------------------')
@@ -99,7 +101,7 @@ if dist_config_file:
     print(os.environ['TF_CONFIG'])
 
     epochs = 50
-    BS_PER_GPU = 64
+    BS_PER_GPU = 32 
     NUM_GPUS = len(workers)
     train_dataset, test_dataset = preprocess_data(x_train, y_train,
         x_test, y_test,
@@ -121,29 +123,34 @@ if dist_config_file:
 else:
     print('***************** Local training *****************')
     # file_writer_cm = tf.summary.create_file_writer(logdir + '-train')
-    tensorboard_callback = keras.callbacks.TensorBoard(logdir)
+    # tensorboard_callback = keras.callbacks.TensorBoard(logdir)
 
-    epochs = 50 
-    BS_PER_GPU = 128
-    NUM_GPUS = 1
+    epochs = 50
+    
+    CSV_FILE_PATH = './data/data.csv'
+    TEST_IMAGES = [19, 31, 49, 20, 56, 21]
 
-    train_dataset, test_dataset = preprocess_data(x_train, y_train,
-        x_test, y_test,
-        processors=NUM_GPUS,
-        batch_size_per_processor=BS_PER_GPU,
-        cache=False
-    )
+    gpus = tf.config.experimental.list_physical_devices('GPU')
+    if gpus:
+        # Restrict TensorFlow to only allocate 1GB of memory on the first GPU
+        try:
+            # Currently, memory growth needs to be the same across GPUs
+            # for gpu in gpus:
+            #     tf.config.experimental.set_memory_growth(gpu, True)
+            # logical_gpus = tf.config.experimental.list_logical_devices('GPU')
+            tf.config.experimental.set_virtual_device_configuration(
+                gpus[0],
+                [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=7000)])
+            logical_gpus = tf.config.experimental.list_logical_devices('GPU')
+            print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
+        except RuntimeError as e:
+            # Virtual devices must be set before GPUs have been initialized
+            print(e)
+
+    train, test = load_csv_dataset(CSV_FILE_PATH, TEST_IMAGES, reader='tf')
+    train = preprocess_dataset(train)
 
     model = build_and_compile_model()
-    steps_per_epoch = x_train.shape[0] // (BS_PER_GPU * NUM_GPUS)
+    model.fit(train, epochs=epochs, verbose=1)
 
-    model.fit(train_dataset,
-        epochs=epochs,
-        steps_per_epoch=steps_per_epoch,
-        validation_data=test_dataset,
-        validation_freq=5,
-        callbacks=[tensorboard_callback],
-        verbose=1,
-    )
-
-    save_model(saved_model_path)
+    save_model(model, saved_model_path)
