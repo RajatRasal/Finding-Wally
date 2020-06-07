@@ -16,72 +16,45 @@ from sklearn.metrics import f1_score as f1_score_sk
 
 from model import (preprocess_data, build_and_compile_model, 
     build_and_compile_distributed_model, save_model, preprocess_dataset,
-    load_csv_dataset
+    load_csv_dataset, load_model
 )
 
 
 description = 'Choose between local or distributed training'
 parser = argparse.ArgumentParser(description=description)
-parser.add_argument('-f', '--file', nargs=4,
-    type=argparse.FileType('rb'),
-    help='Training files produced by generate_dataset.py'
-)
+parser.add_argument('-f', '--file', help='CSV Dataset')
+parser.add_argument('-i', '--images', nargs='+', type=int, help='Test images')
+parser.add_argument('-o', '--output', help='Output saved model')
+parser.add_argument('-t', '--train-type', help='Training type')
+parser.add_argument('-l', '--logdir', help='Tensorboard logging directory')
 parser.add_argument('-d', '--distributed',
     type=argparse.FileType('r'),
     help='Distributed training config id'
 )
-parser.add_argument('-l', '--logdir',
-    help='Tensorboard logging directory'
-)
-parser.add_argument('-o', '--output',
-    help='Output saved model'
-)
 args = parser.parse_args()
-x_train_file, y_train_file, x_test_file, y_test_file = args.file
+csv_file_path = args.file
+test_images = args.images
 dist_config_file = args.distributed
 saved_model_path = args.output
+train = args.train_type
 
 # Tensorboard logging callbacks
 logdir = args.logdir + datetime.now().strftime('%Y%m%d-%H%M%S')
 # tensorboard_callback = keras.callbacks.TensorBoard(log_dir=logdir)
 
-"""
-x_train = pickle.load(x_train_file).astype('float64')
-x_test = pickle.load(x_test_file).astype('float64')
-_y_train = pickle.load(y_train_file)
-_y_test = pickle.load(y_test_file)
+EPOCHS = 50
 
-# TODO: Remove this hack - convert RGB to BGR in selective_search.py
-B = x_train[:, :, 0]
-R = x_train[:, :, 2]
-x_train[:, :, 0] = R
-x_train[:, :, 2] = B
-
-# TODO: Remove all of this and put into selective_search.py or generate_dataset.py
-y_reg_train = _y_train[0]
-y_cls_train = _y_train[1]
-y_reg_test = _y_test[0]
-y_cls_test = _y_test[1]
-
-y_reg_train[np.isnan(y_reg_train)] = 0
-y_reg_test[np.isnan(y_reg_test)] = 0
-
-assert y_reg_train.shape[0] == y_cls_train.shape[0]
-assert y_reg_test.shape[0] == y_cls_test.shape[0]
-
-y_train = np.zeros((y_reg_train.shape[0], 5))
-y_test = np.zeros((y_reg_test.shape[0], 5))
-print(f'Train shape: {y_train.shape}')
-print(f'Test shape: {y_test.shape}')
-
-y_train[:, 0:4] = y_reg_train
-y_train[:, 4:] = y_cls_train
-y_test[:, 0:4] = y_reg_test
-y_test[:, 4:] = y_cls_test
-
-# print('Y train counter:', Counter(list(y_train.flatten())))
-# print('Y test counter:', Counter(list(y_test.flatten())))
-"""
+gpus = tf.config.experimental.list_physical_devices('GPU')
+if gpus:
+    try:
+        gpu = gpus[0]
+        config = tf.config.experimental.VirtualDeviceConfiguration(memory_limit=7000)
+        tf.config.experimental.set_virtual_device_configuration(gpu, [config])
+        logical_gpus = tf.config.experimental.list_logical_devices('GPU')
+        print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
+    except RuntimeError as e:
+        # Virtual devices must be set before GPUs have been initialized
+        print(e)
 
 if dist_config_file:
     print('------------------ Distributed Training ------------------')
@@ -120,37 +93,74 @@ if dist_config_file:
     )
 
     save_model(saved_model_path)
-else:
+elif train == 'local':
     print('***************** Local training *****************')
     # file_writer_cm = tf.summary.create_file_writer(logdir + '-train')
     # tensorboard_callback = keras.callbacks.TensorBoard(logdir)
-
-    epochs = 50
-    
-    CSV_FILE_PATH = './data/data.csv'
-    TEST_IMAGES = [19, 31, 49, 20, 56, 21]
-
-    gpus = tf.config.experimental.list_physical_devices('GPU')
-    if gpus:
-        # Restrict TensorFlow to only allocate 1GB of memory on the first GPU
-        try:
-            # Currently, memory growth needs to be the same across GPUs
-            # for gpu in gpus:
-            #     tf.config.experimental.set_memory_growth(gpu, True)
-            # logical_gpus = tf.config.experimental.list_logical_devices('GPU')
-            tf.config.experimental.set_virtual_device_configuration(
-                gpus[0],
-                [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=7000)])
-            logical_gpus = tf.config.experimental.list_logical_devices('GPU')
-            print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
-        except RuntimeError as e:
-            # Virtual devices must be set before GPUs have been initialized
-            print(e)
-
-    train, test = load_csv_dataset(CSV_FILE_PATH, TEST_IMAGES, reader='tf')
-    train = preprocess_dataset(train)
+    train, _ = load_csv_dataset(csv_file_path, test_images, reader='tf')
+    train = preprocess_dataset(train, 3)
 
     model = build_and_compile_model()
-    model.fit(train, epochs=epochs, verbose=1)
+    model.fit(train, epochs=EPOCHS, verbose=1)
 
+    save_model(model, saved_model_path)
+elif train == 'retrain':
+    train, _ = load_csv_dataset(csv_file_path, test_images, reader='tf')
+    train = preprocess_dataset(train, 1)
+
+    # load model
+    model = load_model(saved_model_path)
+
+    X_misclassified = []
+    y_misclassified = []
+
+    threshold = 0.30
+
+    # find false positives
+    for X, y in train:
+        pred = model.predict_on_batch(X)
+        cls = pred[1]
+        cls[cls > threshold] = 1
+        cls[cls <= threshold] = 0
+        mask = tf.not_equal(y[:, -1], cls.flatten())
+        _X_misclassified = tf.boolean_mask(X, mask)
+        _y_misclassified = tf.boolean_mask(y, mask)
+        X_misclassified.append(_X_misclassified)
+        y_misclassified.append(_y_misclassified)
+
+    X_misclassified = tf.concat(X_misclassified, axis=0)
+    y_misclassified = tf.concat(y_misclassified, axis=0)
+
+    print(X_misclassified.shape, X_misclassified.dtype)
+    print(y_misclassified.shape, y_misclassified.dtype)
+
+    X_retrain_dataset = tf.data.Dataset.from_tensor_slices(X_misclassified) \
+        .map(tf.io.serialize_tensor)
+    writer = tf.data.experimental.TFRecordWriter('./data/X_retrain.tfrecord')
+    writer.write(X_retrain_dataset)
+
+    y_retrain_dataset = tf.data.Dataset.from_tensor_slices(y_misclassified) \
+        .map(tf.io.serialize_tensor)
+    writer = tf.data.experimental.TFRecordWriter('./data/y_retrain.tfrecord')
+    writer.write(y_retrain_dataset)
+
+    BATCH_SIZE = 64
+    EPOCHS = 30
+
+    X_retrain_dataset = tf.data.TFRecordDataset("./data/X_retrain.tfrecord") \
+        .map(lambda x: tf.io.parse_tensor(x, tf.float32))
+
+    y_retrain_dataset = tf.data.TFRecordDataset("./data/y_retrain.tfrecord") \
+        .map(lambda x: tf.io.parse_tensor(x, tf.float32))
+
+    _zip = (X_retrain_dataset, y_retrain_dataset)
+
+    retrain_dataset = tf.data.Dataset.zip(_zip) \
+        .batch(BATCH_SIZE) \
+        .prefetch(5)
+
+    # retrain with only misclassified
+    model.fit(retrain_dataset, epochs=EPOCHS, verbose=1)
+
+    # save model
     save_model(model, saved_model_path)

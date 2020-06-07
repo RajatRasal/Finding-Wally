@@ -251,7 +251,7 @@ def build_and_compile_model():
     model.compile(loss=multitask_loss,
         loss_weights=[1, 1],
         metrics=metrics,
-        optimizer=Adam(lr=0.0001),
+        optimizer=Adam(lr=0.000001),
     )
     return model
 
@@ -272,7 +272,7 @@ def predict(X, model, threshold=0.6):
 def save_model(model, saved_model_path):
     model.save(saved_model_path)
 
-def load_model(saved_model_path):
+def load_model(saved_model_path, _compile=True):
     custom_objects = {
         'rcnn_reg_loss': rcnn_reg_loss,
         'rcnn_cls_loss': rcnn_cls_loss,
@@ -280,14 +280,15 @@ def load_model(saved_model_path):
         'rcnn_cls_f1_score': rcnn_cls_f1_score
     }
     # TODO: Change this to load_weights
-    model = tf.keras.models.load_model(saved_model_path,
+    model = tf.keras.models.load_model(
+        saved_model_path,
         custom_objects=custom_objects,
-        compile=True,
+        compile=_compile
     )
     return model
 
 
-def preprocess_dataset(dataset):
+def preprocess_dataset(dataset, repeat=1):
     BATCH_SIZE = 64
     BUFFER_SIZE = BATCH_SIZE * 3
     SEED = 42
@@ -311,7 +312,7 @@ def preprocess_dataset(dataset):
     )
     # There are far fewer positive (Wally) images, so we can cycle
     #  through all of them twice.
-    dataset_positive_batch = dataset_positive.batch(TP_BATCH_SIZE).repeat(2)
+    dataset_positive_batch = dataset_positive.batch(TP_BATCH_SIZE).repeat(repeat)
     dataset_negative_batch = dataset_negative.batch(BATCH_SIZE - TP_BATCH_SIZE)
 
     # Get a single batch from dataset_positive and dataset_negative and

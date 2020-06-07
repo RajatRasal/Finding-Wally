@@ -14,25 +14,35 @@ from log import image_grid, plot_to_image
 description = 'Make predictions using a model'
 parser = argparse.ArgumentParser(description=description)
 parser.add_argument('-m', '--model', help='Trained model file')
-parser.add_argument('-f', '--file', nargs=4, type=argparse.FileType('rb'),
-    help='Training files produced by generate_dataset.py'
-)
+parser.add_argument('-i', '--images', nargs='+', type=int, help='Testing images')
+parser.add_argument('-f', '--file', help='Test CSV dataset')
+parser.add_argument('-t', '--test-type', help='In-sample or out-of-sample')
+
 args = parser.parse_args()
-# x_train_file, y_train_file, x_test_file, y_test_file = args.file
+csv_file_path = args.file
 saved_model_path = args.model
+test_images = args.images
+test_type = args.test_type
 
-restored_model = load_model(saved_model_path)
+gpus = tf.config.experimental.list_physical_devices('GPU')
+if gpus:
+    try:
+        gpu = gpus[0]
+        config = tf.config.experimental.VirtualDeviceConfiguration(memory_limit=7000)
+        tf.config.experimental.set_virtual_device_configuration(gpu, [config])
+        logical_gpus = tf.config.experimental.list_logical_devices('GPU')
+        print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
+    except RuntimeError as e:
+        # Virtual devices must be set before GPUs have been initialized
+        print(e)
 
-print('Loading data')
+train, test = load_csv_dataset(csv_file_path, test_images, reader='tf')
+if test_type == 'in':
+    test = preprocess_dataset(train, repeat=1)
+else:
+    test = preprocess_dataset(test, repeat=1)
 
-CSV_FILE_PATH = './data/data.csv'
-SAVED_MODEL_PATH = './saved_model'
-TEST_IMAGES = [19, 31, 49, 20, 56, 21]
-
-train, test = load_csv_dataset(CSV_FILE_PATH, TEST_IMAGES, reader='tf')
-test = preprocess_dataset(test)
-
-model = load_model(SAVED_MODEL_PATH)
+model = load_model(saved_model_path, False)
 
 result = []
 y_test = []
@@ -48,7 +58,7 @@ y_test = np.array(y_test)
 
 best = float('-inf') 
 
-for i in range(30, 80, 5):
+for i in range(20, 70, 5):
     _result = result.copy()
     thres = i / 100
     _result[_result >= thres] = 1

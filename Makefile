@@ -5,16 +5,37 @@ train_dist: train.py x_test.pkl x_train.pkl y_test.pkl y_train.pkl dist_config.j
 	  -l logs/train/ \
 	  -o ./saved_model
 
-train: train.py x_test.pkl x_train.pkl y_test.pkl y_train.pkl dist_config.json
-	python train.py \
-	  -f x_train.pkl y_train.pkl x_test.pkl y_test.pkl \
-	  -l logs/train/ \
-	  -o ./saved_model
+train: ./saved_model
 
-test:
+./saved_model: train.py ./data/data.csv
+	python train.py \
+	  -f ./data/data.csv \
+	  -i 19 31 49 20 56 21 \
+	  -l logs/train/ \
+	  -o ./saved_model \
+	  -t local
+
+retrain:
+	python train.py \
+	  -f ./data/data.csv \
+	  -i 19 31 49 20 56 21 \
+	  -l logs/train/ \
+	  -o ./saved_model \
+	  -t retrain
+
+test_in:
 	python metrics.py \
-	  -f x_train.npy y_train.pkl x_test.npy y_test.pkl \
-	  -m ./saved_model
+	  -f ./data/data.csv \
+	  -i 19 31 49 20 56 21 \
+	  -m ./saved_model \
+	  -t in
+
+test_out:
+	python metrics.py \
+	  -f ./data/data.csv \
+	  -i 19 31 49 20 56 21 \
+	  -m ./saved_model \
+	  -t out
 
 infer:
 	python inference.py
