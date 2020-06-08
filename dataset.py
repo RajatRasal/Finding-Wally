@@ -7,6 +7,11 @@ For each foreground, calculate an offset to the ground truth
 From each image we want a 25% foreground and 75% background
 Reshape each region proposal to 224 * 224
 """
+nos = [1, 2, 4, 5, 7, 8, 9, 12, 14, 15, 18, 19, 20, 21, 22, 24, 25, 26, 27]
+
+def create_datapoints(full_img, target_region_bbox, proposal_bbox, t=0.2):
++++
+    return 
 
 """
 Network:
@@ -28,4 +33,7 @@ Results:
 For all those which were predicted foreground, apply the offset and accumulate.
 NMS over accumulator / thresholding.
 Draw a box.
+"""
+"""
+Produce a dataset
 """

@@ -160,7 +160,7 @@ if __name__ == '__main__':
         #   region proposals.
         scale = WIDTH / full_img.shape[1]
         full_img_scaled = scale_image_in_aspect_ratio(full_img, WIDTH)
-        
+
         # Region Proposals
         if os.path.lexists(f'./data/original-images/{no}_candidates'):
             with open(f'./data/original-images/{no}_candidates', 'rb') as f:
@@ -185,8 +185,8 @@ if __name__ == '__main__':
             if (lower_width <= w <= upper_width) and (lower_height <= h <= upper_height):
                 _bbox = BBox(x, y, w, h)
                 iou_score = iou(gt_bbox, _bbox)
-                fg = int(iou_score >= IOU_THRESHOLD) 
+                fg = int(iou_score >= IOU_THRESHOLD)
                 bboxes.append([full_img_path, no, x, y, w, h, x_t, y_t, w_t, h_t, fg])
-        
+
     data = pd.DataFrame(bboxes, columns=COLUMNS)
     data.to_csv('./data/data.csv')

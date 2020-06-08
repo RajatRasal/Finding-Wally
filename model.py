@@ -18,19 +18,6 @@ from tensorflow.keras.regularizers import l1, l2
 ###############################################################################
 # Preprocessing
 ###############################################################################
-"""
-def preprocess_data():
-    # TODO: Abstract out preprocessing capabilities from selective_search.py
-    pass
-
-def train_test_split(x_train, y_train, x_test, y_test, processors=2,
-    batch_size_per_processor=64, cache=True, seed=42
-):
-    # TODO: Replace preprocess_data with this function. Replace body of this function
-    #  with preprocess data
-    # should call 
-    pass
-"""
 
 def load_csv_dataset(csv_file_path, test_images, reader='pd',
     image_col='image_no',
@@ -113,6 +100,110 @@ def preprocess_data(x_train, y_train, x_test, y_test, processors=2,
 
 def load_and_preprocess_csv_data(csv_file_path):
     pass
+
+def preprocess_dataset(dataset, repeat=1):
+    BATCH_SIZE = 64
+    BUFFER_SIZE = BATCH_SIZE * 3
+    SEED = 42
+    TP_BATCH_FACTOR = 0.25
+    TP_BATCH_SIZE = int(BATCH_SIZE * TP_BATCH_FACTOR)
+
+    LABEL_COL = -1
+    WALLY = 1
+    BACKGROUND = 0
+
+    tf.random.set_seed(SEED)
+
+    dataset = dataset.shuffle(BUFFER_SIZE)
+
+    # In each batch there should be 25% 1s and 75% 0s.
+    dataset_positive = dataset.filter(
+        lambda *row: tf.math.equal(row[LABEL_COL], WALLY)
+    )
+    dataset_negative = dataset.filter(
+        lambda *row: tf.math.equal(row[LABEL_COL], BACKGROUND)
+    )
+    # There are far fewer positive (Wally) images, so we can cycle
+    #  through all of them twice.
+    dataset_positive_batch = dataset_positive.batch(TP_BATCH_SIZE).repeat(repeat)
+    dataset_negative_batch = dataset_negative.batch(BATCH_SIZE - TP_BATCH_SIZE)
+
+    # Get a single batch from dataset_positive and dataset_negative and
+    #   concatenated into a single batch.
+    batch_zip = (dataset_positive_batch, dataset_negative_batch)
+
+    @tf.function
+    def merge_csv_batches(batch_1, batch_2):
+        cols = []
+        for col_1, col_2 in zip(batch_1, batch_2):
+            cols.append(tf.concat([col_1, col_2], 0))
+        return cols
+
+    @tf.function
+    def load_region_proposal(image_data):
+        image_file, x1, y1, w, h = image_data
+        image_string = tf.io.read_file(image_file)
+        image = tf.image.decode_jpeg(image_string)
+        image = tf.image.crop_to_bounding_box(image, y1, x1, h, w)
+        image = tf.image.resize(image, [224, 224])
+        return image
+
+    @tf.function
+    def load_images(*batch):
+        image_files = batch[0]
+        x1s = tf.cast(batch[2], tf.int32)
+        y1s = tf.cast(batch[3], tf.int32)
+        ws = tf.cast(batch[4], tf.int32)
+        hs = tf.cast(batch[5], tf.int32)
+        images = tf.map_fn(
+            load_region_proposal,
+            (image_files, x1s, y1s, ws, hs),
+            dtype=tf.float32
+        )
+        return (images, *batch[1:])
+
+    @tf.function
+    def preprocess_batch(*batch):
+        return (vgg16.preprocess_input(batch[0]), *batch[1:])
+
+    @tf.function
+    def xy_split(image, no, x, y, w, h, x_t, y_t, w_t, h_t, fg):
+        # find center coordinates of bounding boxes
+        rp_center_x, rp_center_y = (x + w / 2, y + h / 2)
+        gt_center_x, gt_center_y = (x_t + w_t / 2, y_t + h_t / 2)
+
+        # calculate offset that we want to predict
+        offset_x = (gt_center_x - rp_center_x) / w
+        offset_y = (gt_center_y - rp_center_y) / h
+        offset_w = tf.math.log(w_t / w)
+        offset_h = tf.math.log(h_t / h)
+
+        X = image
+        y = (offset_x, offset_y, offset_w, offset_h, fg)
+        return X, y
+
+    @tf.function
+    def col_to_row(image, labels):
+        *offsets, fg = labels
+        fg = tf.cast(fg, tf.float32)
+        labels = tf.stack([*offsets, fg])
+        labels = tf.transpose(labels)
+        return image, labels
+
+    @tf.function
+    def shuffle_batch(*batch):
+        return tf.random.shuffle(batch, seed=SEED)
+
+    dataset = tf.data.experimental.CsvDataset.zip(batch_zip) \
+        .map(merge_csv_batches, tf.data.experimental.AUTOTUNE) \
+        .map(load_images, tf.data.experimental.AUTOTUNE) \
+        .cache() \
+        .map(preprocess_batch, tf.data.experimental.AUTOTUNE) \
+        .map(xy_split, tf.data.experimental.AUTOTUNE) \
+        .map(col_to_row, tf.data.experimental.AUTOTUNE) \
+        .prefetch(tf.data.experimental.AUTOTUNE)
+
+    return dataset
 
 ###############################################################################
 # Backbone Wrappers
@@ -286,112 +377,6 @@ def load_model(saved_model_path, _compile=True):
         compile=_compile
     )
     return model
-
-
-def preprocess_dataset(dataset, repeat=1):
-    BATCH_SIZE = 64
-    BUFFER_SIZE = BATCH_SIZE * 3
-    SEED = 42
-    TP_BATCH_FACTOR = 0.25
-    TP_BATCH_SIZE = int(BATCH_SIZE * TP_BATCH_FACTOR)
-
-    LABEL_COL = -1
-    WALLY = 1 
-    BACKGROUND = 0
-
-    tf.random.set_seed(SEED)
-
-    dataset = dataset.shuffle(BUFFER_SIZE)
-
-    # In each batch there should be 25% 1s and 75% 0s.
-    dataset_positive = dataset.filter(
-        lambda *row: tf.math.equal(row[LABEL_COL], WALLY)
-    )
-    dataset_negative = dataset.filter(
-        lambda *row: tf.math.equal(row[LABEL_COL], BACKGROUND)
-    )
-    # There are far fewer positive (Wally) images, so we can cycle
-    #  through all of them twice.
-    dataset_positive_batch = dataset_positive.batch(TP_BATCH_SIZE).repeat(repeat)
-    dataset_negative_batch = dataset_negative.batch(BATCH_SIZE - TP_BATCH_SIZE)
-
-    # Get a single batch from dataset_positive and dataset_negative and
-    #   concatenated into a single batch.
-    batch_zip = (dataset_positive_batch, dataset_negative_batch)
-
-    @tf.function
-    def merge_csv_batches(batch_1, batch_2):
-        cols = []
-        for col_1, col_2 in zip(batch_1, batch_2):
-            cols.append(tf.concat([col_1, col_2], 0))
-        return cols
-
-    @tf.function
-    def load_region_proposal(image_data):
-        image_file, x1, y1, w, h = image_data
-        image_string = tf.io.read_file(image_file)
-        image = tf.image.decode_jpeg(image_string)
-        image = tf.image.crop_to_bounding_box(image, y1, x1, h, w)
-        image = tf.image.resize(image, [224, 224])
-        return image
-
-    @tf.function
-    def load_images(*batch):
-        image_files = batch[0]
-        x1s = tf.cast(batch[2], tf.int32)
-        y1s = tf.cast(batch[3], tf.int32)
-        ws = tf.cast(batch[4], tf.int32)
-        hs = tf.cast(batch[5], tf.int32)
-        images = tf.map_fn(
-            load_region_proposal,
-            (image_files, x1s, y1s, ws, hs),
-            dtype=tf.float32
-        )
-        return (images, *batch[1:])
-
-    @tf.function
-    def preprocess_batch(*batch):
-        return (vgg16.preprocess_input(batch[0]), *batch[1:])
-
-    @tf.function
-    def xy_split(image, no, x, y, w, h, x_t, y_t, w_t, h_t, fg):
-        # find center coordinates of bounding boxes
-        rp_center_x, rp_center_y = (x + w / 2, y + h / 2)
-        gt_center_x, gt_center_y = (x_t + w_t / 2, y_t + h_t / 2)
-
-        # calculate offset that we want to predict
-        offset_x = (gt_center_x - rp_center_x) / w
-        offset_y = (gt_center_y - rp_center_y) / h
-        offset_w = tf.math.log(w_t / w)
-        offset_h = tf.math.log(h_t / h)
-
-        X = image
-        y = (offset_x, offset_y, offset_w, offset_h, fg)
-        return X, y
-
-    @tf.function
-    def col_to_row(image, labels):
-        *offsets, fg = labels
-        fg = tf.cast(fg, tf.float32)
-        labels = tf.stack([*offsets, fg])
-        labels = tf.transpose(labels)
-        return image, labels
-
-    @tf.function
-    def shuffle_batch(*batch):
-        return tf.random.shuffle(batch, seed=SEED)
-
-    dataset = tf.data.experimental.CsvDataset.zip(batch_zip) \
-        .map(merge_csv_batches, tf.data.experimental.AUTOTUNE) \
-        .map(load_images, tf.data.experimental.AUTOTUNE) \
-        .cache() \
-        .map(preprocess_batch, tf.data.experimental.AUTOTUNE) \
-        .map(xy_split, tf.data.experimental.AUTOTUNE) \
-        .map(col_to_row, tf.data.experimental.AUTOTUNE) \
-        .prefetch(tf.data.experimental.AUTOTUNE)
-
-    return dataset
-
 
 if __name__ == '__main__':
     CSV_FILE_PATH = './data/data.csv'

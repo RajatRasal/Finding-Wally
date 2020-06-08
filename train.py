@@ -14,7 +14,7 @@ import tensorflow.keras as keras
 from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.metrics import f1_score as f1_score_sk
 
-from model import (preprocess_data, build_and_compile_model, 
+from model import (preprocess_data, build_and_compile_model,
     build_and_compile_distributed_model, save_model, preprocess_dataset,
     load_csv_dataset, load_model
 )
@@ -65,7 +65,7 @@ if dist_config_file:
     # workers = ['146.169.53.225:2223', '146.169.53.207:2222']
     index = list(map(lambda x: x.split(':')[0], workers)).index(ip)
     print(workers)
-    
+
     strategy = tf.distribute.experimental.MultiWorkerMirroredStrategy()
     os.environ['TF_CONFIG'] = json.dumps({
         'cluster': {'worker': workers},
@@ -74,7 +74,7 @@ if dist_config_file:
     print(os.environ['TF_CONFIG'])
 
     epochs = 50
-    BS_PER_GPU = 32 
+    BS_PER_GPU = 32
     NUM_GPUS = len(workers)
     train_dataset, test_dataset = preprocess_data(x_train, y_train,
         x_test, y_test,
@@ -86,7 +86,7 @@ if dist_config_file:
     )
 
     steps_per_epoch = x_train.shape[0] // (BS_PER_GPU * NUM_GPUS)
-    model.fit(train_dataset, 
+    model.fit(train_dataset,
         epochs=epochs,
         steps_per_epoch=steps_per_epoch,
         verbose=1
