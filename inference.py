@@ -209,7 +209,7 @@ selected_boxes = tf.gather(refined_candidates, selected_indices)
 refined_candidates[:, [X_1, X_2]] *= WIDTH
 refined_candidates[:, [Y_1, Y_2]] *= HEIGHT
 
-image_scaled_copy = image_scaled.copy() 
+image_scaled_copy = image_scaled.copy()
 
 for i in range(len(selected_boxes)):
     x_1 = int(refined_candidates[i, X_1])
