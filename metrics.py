@@ -58,12 +58,18 @@ y_test = np.array(y_test)
 
 best = float('-inf') 
 
-for i in range(20, 70, 5):
+for i in range(47, 52, 1):
     _result = result.copy()
     thres = i / 100
     _result[_result >= thres] = 1
     _result[_result < thres] = 0
     f1 = f1_score_sk(y_test, _result)
+    cm = confusion_matrix(y_test, _result)
+    print(f'Threshold: {i}')
+    print(f'f1 score: {f1}')
+    print(f'confusion matrix:\n{cm}')
+
+"""
     if f1 > best:
         best = f1 
         best_thres = thres
@@ -78,7 +84,6 @@ print(f'confusion matrix:\n{cm}')
 print(classification_report(best_y_test, best_result))
 
 # Log inference output to Tensorboard
-"""
 images = []
 for x, _ in test_dataset:
     images.append(x)

@@ -246,11 +246,11 @@ def densenet121_backbone():
     backbone = base_model.layers[-2].output
     return (base_model.input, backbone)
 
-def vgg16_backbone():
+def vgg16_backbone(retrain_from=0):
     base_model = VGG16(weights='imagenet')
 
-    for layers in base_model.layers:
-        layers.trainable = False
+    for i, layer in enumerate(base_model.layers):
+        layer.trainable = (i > retrain_from)
 
     backbone = base_model.layers[-4].output
     return (base_model.input, backbone)
@@ -261,27 +261,29 @@ def vgg16_backbone():
 
 def build_model():
     # https://keras.io/api/applications/
-    # VGG16 - f1-scroe: 0.68, loss: 0.3, Adam(lr=0.00001)
-    # VGG19 - f1-scroe: 0.55, loss: 0.46
+    # VGG16 - f1-score: 0.68, loss: 0.3, Adam(lr=0.00001)
+    # VGG19 - f1-score: 0.55, loss: 0.46
     # Resnet152 - f1-score 0.40, loss: 0.33
     # DenseNet121 - f1-score: 0.4, loss: 1.1
 
     # DenseNet121, DenseNet169, DenseNet201, ResNet50, ResNet152, ResNet101
-    base_input, backbone = vgg16_backbone()
+    base_input, backbone = vgg16_backbone(retrain_from=9)
 
     # Combine backbone and my outputs to form the NN pipeline
     fc1 = Dense(300, activation='relu', name='additional_fc1',
         activity_regularizer=l1(0.001))(backbone)
     do1 = Dropout(0.5, seed=41)(fc1)
+    """
     fc2 = Dense(100, activation='relu', name='additional_fc2',
         activity_regularizer=l1(0.001))(do1)
     do2 = Dropout(0.5, seed=41)(fc2)
+    """
     
     # Loss function for foreground/background classification
     cls = Dense(1, activation='sigmoid', name='classifier')(do1)
     # Loss function for bounding box regression
     reg = Dense(4, activation='linear', name='regressor',
-        activity_regularizer=l2(0.1))(do2)
+        activity_regularizer=l2(0.01))(do1)
     
     model = Model(inputs=base_input, outputs=[reg, cls])
     return model
@@ -299,9 +301,10 @@ def rcnn_cls_loss(y_true, y_pred):
     cls_true = y_true[:, 4:]
     cls_pred = kb.clip(cls_pred, kb.epsilon(), 1 - kb.epsilon())
     cls_true = kb.clip(cls_true, kb.epsilon(), 1 - kb.epsilon())
-    weighted_bce_loss = -(0.25 * cls_true * kb.log(cls_pred) + \
-        0.75 * (1 - cls_true) * kb.log(1 - cls_pred)
-    )
+    weighted_bce_loss = losses.BinaryCrossentropy()(cls_true, cls_pred)
+    # weighted_bce_loss = -(0.25 * cls_true * kb.log(cls_pred) + \
+    #     0.75 * (1 - cls_true) * kb.log(1 - cls_pred)
+    # )
     return weighted_bce_loss
 
 ###############################################################################
@@ -346,7 +349,7 @@ def build_and_compile_model():
     )
     return model
 
-def build_and_compile_distributed_model(strategy, batch_size):
+def build_and_compile_distributed_model(strategy):
     with strategy.scope():
         return build_and_compile_model()
 
@@ -363,7 +366,7 @@ def predict(X, model, threshold=0.6):
 def save_model(model, saved_model_path):
     model.save(saved_model_path)
 
-def load_model(saved_model_path, _compile=True):
+def load_model(saved_model_path, _compile=True, lr=None):
     custom_objects = {
         'rcnn_reg_loss': rcnn_reg_loss,
         'rcnn_cls_loss': rcnn_cls_loss,
@@ -371,12 +374,18 @@ def load_model(saved_model_path, _compile=True):
         'rcnn_cls_f1_score': rcnn_cls_f1_score
     }
     # TODO: Change this to load_weights
+    # Retrain with new learning rate
     model = tf.keras.models.load_model(
         saved_model_path,
         custom_objects=custom_objects,
         compile=_compile
     )
+
+    if lr: 
+        kb.set_value(model.optimizer.lr, lr)
+
     return model
+
 
 if __name__ == '__main__':
     CSV_FILE_PATH = './data/data.csv'

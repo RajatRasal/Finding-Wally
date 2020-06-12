@@ -48,7 +48,7 @@ gpus = tf.config.experimental.list_physical_devices('GPU')
 if gpus:
     try:
         gpu = gpus[0]
-        config = tf.config.experimental.VirtualDeviceConfiguration(memory_limit=7000)
+        config = tf.config.experimental.VirtualDeviceConfiguration(memory_limit=11000)
         tf.config.experimental.set_virtual_device_configuration(gpu, [config])
         logical_gpus = tf.config.experimental.list_logical_devices('GPU')
         print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
@@ -97,11 +97,18 @@ elif train == 'local':
     print('***************** Local training *****************')
     # file_writer_cm = tf.summary.create_file_writer(logdir + '-train')
     # tensorboard_callback = keras.callbacks.TensorBoard(logdir)
-    train, _ = load_csv_dataset(csv_file_path, test_images, reader='tf')
+    train, test = load_csv_dataset(csv_file_path, test_images, reader='tf')
     train = preprocess_dataset(train, 3)
+    test = preprocess_dataset(test, 1)
 
     model = build_and_compile_model()
-    model.fit(train, epochs=EPOCHS, verbose=1)
+    model.fit(train,
+        validation_data=test,
+        validation_steps=5,
+        validation_freq=5,
+        epochs=EPOCHS,
+        verbose=1
+    )
 
     save_model(model, saved_model_path)
 elif train == 'retrain':
@@ -109,19 +116,19 @@ elif train == 'retrain':
     train = preprocess_dataset(train, 1)
 
     # load model
-    model = load_model(saved_model_path)
+    model = load_model(saved_model_path, lr=0.000001)
 
     X_misclassified = []
     y_misclassified = []
 
-    threshold = 0.30
+    threshold = 0.50
 
     # find false positives
     for X, y in train:
         pred = model.predict_on_batch(X)
         cls = pred[1]
-        cls[cls > threshold] = 1
-        cls[cls <= threshold] = 0
+        cls[cls >= threshold] = 1
+        cls[cls < threshold] = 0
         mask = tf.not_equal(y[:, -1], cls.flatten())
         _X_misclassified = tf.boolean_mask(X, mask)
         _y_misclassified = tf.boolean_mask(y, mask)

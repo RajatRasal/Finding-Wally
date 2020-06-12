@@ -1,3 +1,5 @@
+test_images = 31 49 20 56 21
+
 train_dist: train.py x_test.pkl x_train.pkl y_test.pkl y_train.pkl dist_config.json
 	python train.py \
 	  -f x_train.pkl y_train.pkl x_test.pkl y_test.pkl \
@@ -5,12 +7,14 @@ train_dist: train.py x_test.pkl x_train.pkl y_test.pkl y_train.pkl dist_config.j
 	  -l logs/train/ \
 	  -o ./saved_model
 
+train_cycle: train retrain retrain retrain retrain retrain
+
 train: ./saved_model
 
-./saved_model: train.py ./data/data.csv
+./saved_model: train.py model.py ./data/data.csv
 	python train.py \
 	  -f ./data/data.csv \
-	  -i 19 31 49 20 56 21 \
+	  -i ${test_images} \
 	  -l logs/train/ \
 	  -o ./saved_model \
 	  -t local
@@ -18,7 +22,7 @@ train: ./saved_model
 retrain:
 	python train.py \
 	  -f ./data/data.csv \
-	  -i 19 31 49 20 56 21 \
+	  -i ${test_images} \
 	  -l logs/train/ \
 	  -o ./saved_model \
 	  -t retrain
@@ -26,14 +30,14 @@ retrain:
 test_in:
 	python metrics.py \
 	  -f ./data/data.csv \
-	  -i 19 31 49 20 56 21 \
+	  -i ${test_images} \
 	  -m ./saved_model \
 	  -t in
 
 test_out:
 	python metrics.py \
 	  -f ./data/data.csv \
-	  -i 19 31 49 20 56 21 \
+	  -i ${test_images} \
 	  -m ./saved_model \
 	  -t out
 
@@ -55,7 +59,7 @@ tensorboard_eval:
 	tensorboard --logdir ./logs/test_data --port=8080
 
 generate_dataset:
-	python3 generate_dataset.py ./data/data.csv -t 19 31 49 20 56 21
+	python3 generate_dataset.py ./data/data.csv -t ${test_images}
 
 region_proposals:
 	python3 region_proposals.py \
