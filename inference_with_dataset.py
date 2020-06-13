@@ -1,3 +1,5 @@
+from datetime import datetime
+
 import cv2 as cv
 import numpy as np
 import matplotlib.pyplot as plt
@@ -9,8 +11,10 @@ from tensorflow.keras.applications import vgg16
 from model import load_model, load_csv_dataset
 
 
+tf.random.set_seed(42)
+
 csv_file_path = './data/data.csv'
-test_images = [19, 31, 49, 20, 56, 21]
+test_images = [31, 49, 20, 56, 21]
 image_no = 19
 
 shuffle_buffer = 10000
@@ -35,7 +39,7 @@ def load_image(img_file, x, y, w, h):
     return image
 
 # Extract
-_, test = load_csv_dataset(csv_file_path, test_images, reader='tf')
+test, _ = load_csv_dataset(csv_file_path, test_images, reader='tf')
 model = load_model('./saved_model')
 
 # Transform
@@ -56,12 +60,14 @@ image = np.array(Image.open(f'./data/original-images/{image_no}.jpg'))
 bbox = []
 scores = []
 
+threshold = 0.5
+
 for i, (test_file, test_image) in enumerate(test):
     print(i)
     pred = model.predict_on_batch(test_image)
     offset = pred[0]
     cls = pred[1].flatten()
-    mask = np.argwhere(cls >= 0.6)
+    mask = np.argwhere(cls >= threshold)
     _, _x, _y, _w, _h = test_file
     for i, data in enumerate(zip(_x, _y, _w, _h)):
         if i not in mask:
@@ -72,8 +78,8 @@ for i, (test_file, test_image) in enumerate(test):
         w = tf.cast(w, tf.float32)
         h = tf.cast(h, tf.float32)
         # find center
-        x_center = x + w / 2.0
-        y_center = y + h / 2.0
+        x_center = x + (w / 2.0)
+        y_center = y + (h / 2.0)
         # apply offset
         x_center += w * offset[i, 0]
         y_center += h * offset[i, 1]
@@ -109,8 +115,15 @@ with open('bboxes', 'wb') as f:
 with open('scores', 'wb') as f:
     pickle.dump(scores, f)
 
-plt.imshow(image)
-plt.show()
+# plt.imshow(image)
+# plt.show()
+
+logdir = f'./logs/results/{image_no}/{datetime.now().strftime("%Y%m%d-%H%M%S")}'
+file_writer = tf.summary.create_file_writer(logdir)
+
+with file_writer.as_default():
+    img_summary = np.reshape(image, (-1, *image.shape)) 
+    tf.summary.image(f'{image_no}-result', img_summary, step=0)
 
 with open('bboxes', 'rb') as f:
     bbox = pickle.load(f)
@@ -128,9 +141,9 @@ bbox[:, [0, 2]] /= image2.shape[0]
 selected_indices = tf.image.non_max_suppression(
     boxes=tf.convert_to_tensor(bbox),
     scores=tf.convert_to_tensor(scores),
-    max_output_size=20,
-    iou_threshold=0.7,
-    score_threshold=0.6
+    max_output_size=100,
+    iou_threshold=0.5,
+    score_threshold=0.4
 )
 selected_boxes = tf.gather(bbox, selected_indices).numpy()
 selected_boxes[:, [1, 3]] *= image2.shape[1]
@@ -143,5 +156,9 @@ for y1, x1, y2, x2 in selected_boxes:
         (0, 225, 225), 2
     )
 
-plt.imshow(image2)
-plt.show()
+with file_writer.as_default():
+    img2_summary = np.reshape(image2, (-1, *image2.shape)) 
+    tf.summary.image(f'{image_no}-result', img2_summary, step=1)
+
+# plt.imshow(image2)
+# plt.show()
