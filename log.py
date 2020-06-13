@@ -77,32 +77,38 @@ def log_image(file_writer, log_name, image, i):
         _image = np.reshape(image, (-1, *image.shape)) 
         tf.summary.image(log_name, _image, step=i)
 
-def draw_boxes_on_image(image, bboxes, scores=None, color=(0, 0, 225),
+def draw_box_on_image(image, bbox, score=None, color=(0, 0, 225),
     box_thickness=4, text_thickness=2, text_line_type=2,
     text_font=cv.FONT_HERSHEY_SIMPLEX, text_font_scale=0.9
 ):
+    y1, x1, y2, x2 = bbox
+    rect_obj = cv.rectangle(
+        img=image,
+        pt1=(int(x1), int(y1)),
+        pt2=(int(x2), int(y2)),
+        color=color,
+        thickness=box_thickness
+    )
+    if score:
+        cv.putText(
+            img=rect_obj,
+            text=str(score),
+            org=(int(x1), int(y1) - 10),
+            fontFace=text_font,
+            fontScale=text_font_scale,
+            color=color,
+            thickness=text_thickness,
+            lineType=text_line_type
+        )
+    return image
+
+
+def draw_boxes_on_image(image, bboxes, scores=None, **kwargs):
     if scores is None:
         scores = np.zeros(bboxes.shape[0])
 
-    for (y1, x1, y2, x2), score in zip(bboxes, scores):
-        rect_obj = cv.rectangle(
-            img=image,
-            pt1=(int(x1), int(y1)),
-            pt2=(int(x2), int(y2)),
-            color=color,
-            thickness=box_thickness
-        )
-        if score:
-            cv.putText(
-                img=rect_obj,
-                text=str(score),
-                org=(int(x1), int(y1) - 10),
-                fontFace=text_font,
-                fontScale=text_font_scale,
-                color=color,
-                thickness=text_thickness,
-                lineType=text_line_type
-            )
+    for box, score in zip(bboxes, scores):
+        image = draw_box_on_image(image, box, score, **kwargs)
 
     return image
 

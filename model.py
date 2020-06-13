@@ -71,44 +71,6 @@ def __split_tf_data_by_images(data, test_images, image_col='image_no'):
     )
     return train, test
 
-def preprocess_data(x_train, y_train, x_test, y_test, processors=2,
-    batch_size_per_processor=64, cache=True, seed=42
-):
-    tf.random.set_seed(seed)
-
-    def convert_types(image, label):
-        image = tf.cast(image, tf.float16)
-        label = tf.cast(label, tf.float16)
-        return image, label
-
-    def random_flip(image, label):
-        image = tf.image.random_flip_up_down(image, seed=seed)
-        return image, label
-
-    def vgg_preprocess(image, label):
-        image = vgg16.preprocess_input(image)
-        return image, label
-
-    batch_size = processors * batch_size_per_processor
-    parallel_calls = tf.data.experimental.AUTOTUNE
-    SHUFFLE_BUFFER = batch_size_per_processor
-
-    train_dataset = tf.data.Dataset.from_tensor_slices((x_train, y_train)) \
-        .map(vgg_preprocess, num_parallel_calls=parallel_calls) \
-        .batch(batch_size, drop_remainder=True) \
-        .cache() \
-        .shuffle(SHUFFLE_BUFFER)
-    test_dataset = tf.data.Dataset.from_tensor_slices((x_test, y_test)) \
-        .map(vgg_preprocess, num_parallel_calls=parallel_calls) \
-        .batch(batch_size, drop_remainder=True) \
-        .cache() \
-        .shuffle(SHUFFLE_BUFFER)
-
-    return train_dataset, test_dataset
-
-def load_and_preprocess_csv_data(csv_file_path):
-    pass
-
 def preprocess_dataset(dataset, repeat=1):
     BATCH_SIZE = 64
     BUFFER_SIZE = BATCH_SIZE * 3
@@ -212,6 +174,45 @@ def preprocess_dataset(dataset, repeat=1):
         .prefetch(tf.data.experimental.AUTOTUNE)
 
     return dataset
+
+def inference_dataset_etl(csv_file_path, test_image_no, shuffle_buffer=10000, 
+    take=3000, batch_size=250, seed=42
+):
+    tf.random.set_seed(seed)
+
+    @tf.function
+    def cast(img_file, x, y, w, h):
+        x = tf.cast(x, tf.int32)
+        y = tf.cast(y, tf.int32)
+        w = tf.cast(w, tf.int32)
+        h = tf.cast(h, tf.int32)
+        return (img_file, x, y, w, h)
+    
+    @tf.function
+    def load_image(img_file, x, y, w, h):
+        image_string = tf.io.read_file(img_file)
+        image = tf.image.decode_jpeg(image_string)
+        image = tf.image.crop_to_bounding_box(image, y, x, h, w)
+        image = tf.image.resize(image, [224, 224])
+        return image
+
+    # Extract
+    csv_data = load_csv_dataset(csv_file_path, reader='tf')
+    
+    # Transform
+    test_files = csv_data.shuffle(shuffle_buffer) \
+        .filter(lambda *batch: batch[1] == test_image_no) \
+        .map(lambda *batch: (batch[0], *batch[2:6]), tf.data.experimental.AUTOTUNE) \
+        .map(cast, tf.data.experimental.AUTOTUNE)
+    test_images = test_files.map(load_image, tf.data.experimental.AUTOTUNE) \
+        .map(vgg16.preprocess_input, tf.data.experimental.AUTOTUNE)
+    
+    # Load
+    data = tf.data.Dataset.zip((test_files, test_images)) \
+        .take(take) \
+        .batch(batch_size)
+
+    return data
 
 ###############################################################################
 # Backbone Wrappers
@@ -370,6 +371,14 @@ def predict(X, model, threshold=0.6):
     pred[pred >= threshold] = 1
     pred[pred < threshold] = 0
     return pred
+
+def predict_on_batch(X, model, threshold=0.5):
+    pred = model.predict_on_batch(X)
+    offset = pred[0]
+    cls = pred[1].flatten()
+    cls[cls >= threshold] = 1
+    cls[cls < threshold] = 0
+    return offset, cls 
 
 def save_model(model, saved_model_path):
     model.save(saved_model_path)
