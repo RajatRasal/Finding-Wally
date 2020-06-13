@@ -19,26 +19,34 @@ from tensorflow.keras.regularizers import l1, l2
 # Preprocessing
 ###############################################################################
 
-def load_csv_dataset(csv_file_path, test_images, reader='pd',
-    image_col='image_no',
-):
+def load_csv_dataset(csv_file_path, reader='tf'):
     if reader == 'pd':
         # Keep index column 
-        df = pd.read_csv(csv_file_path, index_col=0)
-        train, test = __split_df_data_by_images(df, test_images, image_col)
+        data = pd.read_csv(csv_file_path, index_col=0)
     elif reader == 'tf':
         COL_TYPES = [tf.string, tf.int32, tf.float32, tf.float32, \
             tf.float32, tf.float32, tf.float32, tf.float32, tf.float32, \
             tf.float32, tf.int32
         ]
-        tf_data = tf.data.experimental.CsvDataset(
+        data = tf.data.experimental.CsvDataset(
             filenames=csv_file_path,
             record_defaults=COL_TYPES,
             select_cols=range(1, len(COL_TYPES)+1),  # Drop index column
             header=True
         )
+    else:
+        assert NotImplementedError, 'This reader does not exist yet'
+    return data
+
+def load_and_split_csv_dataset(csv_file_path, test_images, reader='pd',
+    image_col='image_no',
+):
+    data = load_csv_dataset(csv_file_path, reader)
+    if reader == 'pd':
+        train, test = __split_df_data_by_images(data, test_images, image_col)
+    elif reader == 'tf':
         _test_images = tf.constant(test_images)
-        train, test = __split_tf_data_by_images(tf_data, _test_images, image_col)
+        train, test = __split_tf_data_by_images(data, _test_images, image_col)
     else:
         assert NotImplementedError, 'This reader does not exist yet'
     return train, test
@@ -391,7 +399,7 @@ if __name__ == '__main__':
     CSV_FILE_PATH = './data/data.csv'
     TEST_IMAGES = [19, 31, 49, 20, 56, 21]
 
-    train, test = load_csv_dataset(CSV_FILE_PATH, TEST_IMAGES, reader='tf')
+    train, test = load_and_split_csv_dataset(CSV_FILE_PATH, TEST_IMAGES, reader='tf')
 
     # t1 = len(list(test.as_numpy_iterator()))
     # print(t1)

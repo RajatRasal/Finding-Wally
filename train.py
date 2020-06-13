@@ -16,7 +16,7 @@ from sklearn.metrics import f1_score as f1_score_sk
 
 from model import (preprocess_data, build_and_compile_model,
     build_and_compile_distributed_model, save_model, preprocess_dataset,
-    load_csv_dataset, load_model
+    load_and_split_csv_dataset, load_model
 )
 
 
@@ -42,7 +42,7 @@ train = args.train_type
 logdir = args.logdir + datetime.now().strftime('%Y%m%d-%H%M%S')
 # tensorboard_callback = keras.callbacks.TensorBoard(log_dir=logdir)
 
-EPOCHS = 50
+GPU_MEMORY = 7000
 
 gpus = tf.config.experimental.list_physical_devices('GPU')
 if gpus:
@@ -73,7 +73,6 @@ if dist_config_file:
     })
     print(os.environ['TF_CONFIG'])
 
-    epochs = 50
     BS_PER_GPU = 32
     NUM_GPUS = len(workers)
     train_dataset, test_dataset = preprocess_data(x_train, y_train,
@@ -87,7 +86,7 @@ if dist_config_file:
 
     steps_per_epoch = x_train.shape[0] // (BS_PER_GPU * NUM_GPUS)
     model.fit(train_dataset,
-        epochs=epochs,
+        epochs=EPOCHS,
         steps_per_epoch=steps_per_epoch,
         verbose=1
     )
@@ -95,24 +94,25 @@ if dist_config_file:
     save_model(saved_model_path)
 elif train == 'local':
     print('***************** Local training *****************')
+    EPOCHS = 200
     # file_writer_cm = tf.summary.create_file_writer(logdir + '-train')
     # tensorboard_callback = keras.callbacks.TensorBoard(logdir)
-    train, test = load_csv_dataset(csv_file_path, test_images, reader='tf')
-    train = preprocess_dataset(train, 3)
+    train, test = load_and_split_csv_dataset(csv_file_path, test_images, reader='tf')
+    train = preprocess_dataset(train, 4)
     test = preprocess_dataset(test, 1)
 
     model = build_and_compile_model()
     model.fit(train,
         validation_data=test,
         validation_steps=5,
-        validation_freq=5,
+        validation_freq=20,
         epochs=EPOCHS,
         verbose=1
     )
 
     save_model(model, saved_model_path)
 elif train == 'retrain':
-    train, _ = load_csv_dataset(csv_file_path, test_images, reader='tf')
+    train, _ = load_and_split_csv_dataset(csv_file_path, test_images, reader='tf')
     train = preprocess_dataset(train, 1)
 
     # load model
@@ -152,7 +152,7 @@ elif train == 'retrain':
     writer.write(y_retrain_dataset)
 
     BATCH_SIZE = 64
-    EPOCHS = 30
+    EPOCHS = 100
 
     X_retrain_dataset = tf.data.TFRecordDataset("./data/X_retrain.tfrecord") \
         .map(lambda x: tf.io.parse_tensor(x, tf.float32))

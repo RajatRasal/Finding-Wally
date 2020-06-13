@@ -15,7 +15,7 @@ tf.random.set_seed(42)
 
 csv_file_path = './data/data.csv'
 test_images = [31, 49, 20, 56, 21]
-image_no = 19
+image_no = 5
 
 shuffle_buffer = 10000
 batch_size = 250
@@ -39,7 +39,7 @@ def load_image(img_file, x, y, w, h):
     return image
 
 # Extract
-test, _ = load_csv_dataset(csv_file_path, test_images, reader='tf')
+test, _ = load_and_split_csv_dataset(csv_file_path, test_images, reader='tf')
 model = load_model('./saved_model')
 
 # Transform
