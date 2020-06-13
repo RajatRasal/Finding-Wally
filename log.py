@@ -2,18 +2,12 @@ import io
 import itertools
 from datetime import datetime
 
-import tensorflow as tf
-
+import cloudpickle as pickle
+import cv2 as cv
 import matplotlib.pyplot as plt
 import numpy as np
-import cloudpickle as pickle
-import sklearn.metrics
+import tensorflow as tf
 
-"""
-print("TensorFlow version: ", tf.__version__)
-assert .parse(tf.__version__).release[0] >= 2, \
-            "This notebook requires TensorFlow 2.0 or above."
-"""
 
 def plot_to_image(figure):
     # Save the plot to a PNG in memory.
@@ -49,7 +43,27 @@ def image_grid(train_images, titles, figsize=(10, 10)):
     return figure
 
 def plot_confusion_matrix(cm, class_names):
-    return None
+    figure = plt.figure(figsize=(8, 8))
+    plt.imshow(cm, interpolation='nearest', cmap=plt.cm.Blues)
+    plt.title("Confusion matrix")
+    plt.colorbar()
+    tick_marks = np.arange(len(class_names))
+    plt.xticks(tick_marks, class_names, rotation=45)
+    plt.yticks(tick_marks, class_names)
+    
+    # Normalize the confusion matrix.
+    cm = np.around(cm.astype('float') / cm.sum(axis=1)[:, np.newaxis], decimals=2)
+    
+    # Use white text if squares are dark; otherwise black.
+    threshold = cm.max() / 2.
+    for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
+        color = "white" if cm[i, j] > threshold else "black"
+        plt.text(j, i, cm[i, j], horizontalalignment="center", color=color)
+        
+        plt.tight_layout()
+        plt.ylabel('True label')
+        plt.xlabel('Predicted label')
+    return figure
 
 def log_confusion_matrix(cm, file_writer):
     figure = plot_confusion_matrix(cm, class_names=class_names)
@@ -58,12 +72,40 @@ def log_confusion_matrix(cm, file_writer):
     with file_writer_cm.as_default():
         tf.summary.image("Confusion Matrix", cm_image)
 
+def log_image(file_writer, log_name, image, i):
+    with file_writer.as_default():
+        _image = np.reshape(image, (-1, *image.shape)) 
+        tf.summary.image(log_name, _image, step=i)
 
-# # Prepare the plot
-# figure = image_grid()
-# # Convert to image and log
-# with file_writer.as_default():
-# tf.summary.image("Training data", plot_to_image(figure), step=0)
+def draw_boxes_on_image(image, bboxes, scores=None, color=(0, 0, 225),
+    box_thickness=4, text_thickness=2, text_line_type=2,
+    text_font=cv.FONT_HERSHEY_SIMPLEX, text_font_scale=0.9
+):
+    if scores is None:
+        scores = np.zeros(bboxes.shape[0])
+
+    for (y1, x1, y2, x2), score in zip(bboxes, scores):
+        rect_obj = cv.rectangle(
+            img=image,
+            pt1=(int(x1), int(y1)),
+            pt2=(int(x2), int(y2)),
+            color=color,
+            thickness=box_thickness
+        )
+        if score:
+            cv.putText(
+                img=rect_obj,
+                text=str(score),
+                org=(int(x1), int(y1) - 10),
+                fontFace=text_font,
+                fontScale=text_font_scale,
+                color=color,
+                thickness=text_thickness,
+                lineType=text_line_type
+            )
+
+    return image
+
 
 if __name__ == '__main__':
     # Sets up a timestamped log directory.
