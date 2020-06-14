@@ -7,7 +7,7 @@ import tensorflow as tf
 from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.metrics import f1_score as f1_score_sk
 
-from model import load_model, load_csv_dataset, preprocess_dataset
+from model import load_model, load_and_split_csv_dataset, preprocess_dataset
 from log import image_grid, plot_to_image
 
 
@@ -36,7 +36,7 @@ if gpus:
         # Virtual devices must be set before GPUs have been initialized
         print(e)
 
-train, test = load_csv_dataset(csv_file_path, test_images, reader='tf')
+train, test = load_and_split_csv_dataset(csv_file_path, test_images, reader='tf')
 if test_type == 'in':
     test = preprocess_dataset(train, repeat=1)
 else:

@@ -9,21 +9,26 @@ from PIL import Image
 from tensorflow.keras.applications import vgg16
 
 from log import log_image, draw_box_on_image, draw_boxes_on_image
-from model import load_model, inference_dataset_etl, predict_on_batch
+from model import (load_model, inference_dataset_etl, predict_on_batch,
+    gpu_config
+)
 from nms import nms
 
 
 csv_file_path = './data/data.csv'
-image_no = 5
+image_no = 21
 test_image_path = f'./data/original-images/{image_no}.jpg'
 saved_model_path = './saved_model'
+
+memory_limit = 7000
+gpu_config(memory_limit)
 
 logdir = f'./logs/results/{image_no}/{datetime.now().strftime("%Y%m%d-%H%M%S")}'
 file_writer = tf.summary.create_file_writer(logdir)
 
 image = np.array(Image.open(test_image_path))
 model = load_model(saved_model_path)
-test = inference_dataset_etl(csv_file_path, image_no)
+test = inference_dataset_etl(csv_file_path, image_no, take=2000)
 
 bbox = []
 scores = []
@@ -85,10 +90,22 @@ scores = np.array(scores)
 
 bbox[:, [1, 3]] /= image2.shape[1]
 bbox[:, [0, 2]] /= image2.shape[0]
-selected_boxes, selected_scores = nms(bbox, scores)
+selected_boxes, selected_scores = nms(
+    bboxes=bbox,
+    scores=scores,
+    score_threshold=0.8,
+    max_output_boxes=20
+)
 selected_boxes[:, [1, 3]] *= image2.shape[1]
 selected_boxes[:, [0, 2]] *= image2.shape[0]
 
-image2 = draw_boxes_on_image(image2, selected_boxes, color=(0, 225, 225))
+assert selected_boxes.shape[0] == selected_scores.shape[0]
+
+image2 = draw_boxes_on_image(
+    image=image2,
+    bboxes=selected_boxes,
+    scores=selected_scores,
+    color=(0, 5, 5)
+)
 
 log_image(file_writer, f'{image_no}-result', image2, 1)
