@@ -14,9 +14,9 @@ import tensorflow.keras as keras
 from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.metrics import f1_score as f1_score_sk
 
-from model import (preprocess_data, build_and_compile_model,
-    build_and_compile_distributed_model, save_model, preprocess_dataset,
-    load_and_split_csv_dataset, load_model
+from model import (preprocess_dataset, build_and_compile_model,
+    build_and_compile_distributed_model, save_model, load_model,
+    load_and_split_csv_dataset, gpu_config
 )
 
 
@@ -24,6 +24,7 @@ description = 'Choose between local or distributed training'
 parser = argparse.ArgumentParser(description=description)
 parser.add_argument('-f', '--file', help='CSV Dataset')
 parser.add_argument('-i', '--images', nargs='+', type=int, help='Test images')
+parser.add_argument('-g', '--gpu', type=int, help'GPU memory allocation')
 parser.add_argument('-o', '--output', help='Output saved model')
 parser.add_argument('-t', '--train-type', help='Training type')
 parser.add_argument('-l', '--logdir', help='Tensorboard logging directory')
@@ -34,6 +35,7 @@ parser.add_argument('-d', '--distributed',
 args = parser.parse_args()
 csv_file_path = args.file
 test_images = args.images
+gpu_memory = args.gpu
 dist_config_file = args.distributed
 saved_model_path = args.output
 train = args.train_type
@@ -41,22 +43,9 @@ train = args.train_type
 # Tensorboard logging callbacks
 logdir = args.logdir + datetime.now().strftime('%Y%m%d-%H%M%S')
 # tensorboard_callback = keras.callbacks.TensorBoard(log_dir=logdir)
+gpu_config(gpu_memory)
 
-GPU_MEMORY = 7000
-
-gpus = tf.config.experimental.list_physical_devices('GPU')
-if gpus:
-    try:
-        gpu = gpus[0]
-        config = tf.config.experimental.VirtualDeviceConfiguration(memory_limit=11000)
-        tf.config.experimental.set_virtual_device_configuration(gpu, [config])
-        logical_gpus = tf.config.experimental.list_logical_devices('GPU')
-        print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
-    except RuntimeError as e:
-        # Virtual devices must be set before GPUs have been initialized
-        print(e)
-
-if dist_config_file:
+if train == 'dist':
     print('------------------ Distributed Training ------------------')
     dist_config = json.loads(dist_config_file.read())
     ip = socket.gethostbyname(socket.gethostname())
@@ -94,7 +83,7 @@ if dist_config_file:
     save_model(saved_model_path)
 elif train == 'local':
     print('***************** Local training *****************')
-    EPOCHS = 200
+    EPOCHS = 1000
     # file_writer_cm = tf.summary.create_file_writer(logdir + '-train')
     # tensorboard_callback = keras.callbacks.TensorBoard(logdir)
     train, test = load_and_split_csv_dataset(csv_file_path, test_images, reader='tf')

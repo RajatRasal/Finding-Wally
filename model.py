@@ -347,6 +347,20 @@ def rcnn_reg_mse(y_true, y_pred):
 # Build and Compile
 ###############################################################################
 
+def gpu_config(memory_limit=11000):
+    gpus = tf.config.experimental.list_physical_devices('GPU')
+    if gpus:
+        try:
+            gpu = gpus[0]
+            config = tf.config.experimental \
+                .VirtualDeviceConfiguration(memory_limit=memory_limit)
+            tf.config.experimental.set_virtual_device_configuration(gpu, [config])
+            logical_gpus = tf.config.experimental.list_logical_devices('GPU')
+            print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
+        except RuntimeError as e:
+            # Virtual devices must be set before GPUs have been initialized
+            print(e)
+
 def build_and_compile_model():
     model = build_model()
     multitask_loss = [rcnn_reg_loss, rcnn_cls_loss]

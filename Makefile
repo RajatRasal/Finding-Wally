@@ -1,11 +1,17 @@
 test_images = 31 49 20 56 21
+gpu_memory  = 7000
 
-train_dist: train.py x_test.pkl x_train.pkl y_test.pkl y_train.pkl dist_config.json
+train_dist: ./saved_model_dist
+
+./saved_model_dist: train.py model.py ./data/data.csv dist_config.json
 	python train.py \
-	  -f x_train.pkl y_train.pkl x_test.pkl y_test.pkl \
-	  -d dist_config.json \
+	  -f ./data/data.csv \
+	  -i ${test_images} \
+	  -g ${gpu_memory} \
 	  -l logs/train/ \
-	  -o ./saved_model
+	  -o ./saved_model \
+	  -t dist \
+	  -d dist_config.json
 
 train_cycle: train retrain retrain retrain retrain retrain
 
@@ -15,6 +21,7 @@ train: ./saved_model
 	python train.py \
 	  -f ./data/data.csv \
 	  -i ${test_images} \
+	  -g ${gpu_memory} \
 	  -l logs/train/ \
 	  -o ./saved_model \
 	  -t local
@@ -23,6 +30,7 @@ retrain:
 	python train.py \
 	  -f ./data/data.csv \
 	  -i ${test_images} \
+	  -g ${gpu_memory} \
 	  -l logs/train/ \
 	  -o ./saved_model \
 	  -t retrain
