@@ -1,3 +1,4 @@
+import argparse
 from datetime import datetime
 
 import cv2 as cv
@@ -12,18 +13,33 @@ from log import log_image, draw_box_on_image, draw_boxes_on_image
 from model import (load_model, inference_dataset_etl, predict_on_batch,
     gpu_config
 )
-from nms import nms
+from nms import inference_postprocessing
 
 
-csv_file_path = './data/data.csv'
-image_no = 21
+description = 'Inference Options'
+parser = argparse.ArgumentParser(description=description)
+parser.add_argument('-f', '--file', help='CSV Dataset')
+parser.add_argument('-i', '--image-no', type=int, help='Image Number')
+parser.add_argument('-t', '--pred-threshold', type=float,
+    help='Prediction threshold'
+)
+parser.add_argument('-g', '--gpu', type=int, help='GPU memory allocation')
+parser.add_argument('-m', '--model', help='Saved model')
+parser.add_argument('-r', '--region-proposals', type=int,
+    help='Number of region proposals'
+)
+args = parser.parse_args()
+
+image_no = args.image_no
+memory_limit = args.gpu
+csv_file_path = args.file
+saved_model_path = args.model
+region_proposal_no = args.region_proposals
+threshold = args.pred_threshold 
+
 test_image_path = f'./data/original-images/{image_no}.jpg'
-saved_model_path = './saved_model'
 
-memory_limit = 7000
 gpu_config(memory_limit)
-
-region_proposal_no = 2000
 
 logdir = f'./logs/results/{image_no}/{datetime.now().strftime("%Y%m%d-%H%M%S")}'
 file_writer = tf.summary.create_file_writer(logdir)
@@ -34,8 +50,6 @@ test = inference_dataset_etl(csv_file_path, image_no, take=region_proposal_no)
 
 bbox = []
 scores = []
-
-threshold = 0.5
 
 for i, (test_files, test_images) in enumerate(test):
     print(i)
@@ -54,7 +68,7 @@ for i, (test_files, test_images) in enumerate(test):
         w = tf.cast(w, tf.float32)
         h = tf.cast(h, tf.float32)
         # Draw original bounding box
-        image = draw_box_on_image(image, (y, x, y + h, x + w))
+        # image = draw_box_on_image(image, (y, x, y + h, x + w))
 
         # Find center
         x_center = x + (w / 2.0)
@@ -72,7 +86,7 @@ for i, (test_files, test_images) in enumerate(test):
         y2 = y_center + half_height
         x2 = x_center + half_width
         # Draw tigher bounding box
-        image = draw_box_on_image(image, (y1, x1, y2, x2), color=(0, 225, 225))
+        # image = draw_box_on_image(image, (y1, x1, y2, x2), color=(0, 225, 225))
 
         bbox.append([y1, x1, y2, x2])
         scores.append(cls[i])
@@ -85,16 +99,30 @@ with open('scores', 'wb') as f:
 
 log_image(file_writer, f'{image_no}-result', image, 0)
 
-image2 = np.array(Image.open(f'./data/original-images/{image_no}.jpg'))
-
 bbox = np.array(bbox)
 scores = np.array(scores)
 
-print(bbox.shape)
-print(scores.shape)
+print(f"Possible Wallys: {bbox.shape}")
 
-print(scores)
+selected_boxes, selected_scores = inference_postprocessing(
+    _bbox=bbox,
+    _scores=scores,
+    image_height=image.shape[0],
+    image_width=image.shape[1]
+)
 
+print(f"Filtered Possible Wallys: {selected_boxes.shape}")
+
+image = draw_boxes_on_image(
+    image=image,
+    bboxes=selected_boxes,
+    scores=selected_scores,
+    color=(0, 5, 5),
+    box_thickness=1
+)
+log_image(file_writer, f'{image_no}-result', image, 1)
+
+"""
 bbox[:, [1, 3]] /= image2.shape[1]
 bbox[:, [0, 2]] /= image2.shape[0]
 selected_boxes, selected_scores = nms(
@@ -116,3 +144,4 @@ image2 = draw_boxes_on_image(
 )
 
 log_image(file_writer, f'{image_no}-result', image2, 1)
+"""

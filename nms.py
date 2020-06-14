@@ -36,6 +36,47 @@ def repeated_nms(bboxes, scores, repeats, **kwargs):
         _bboxes, _scores = nms(_bboxes, _scores, **kwargs)
     return _bboxes, _scores
 
+def inference_postprocessing(_bbox, _scores, image_height, image_width):
+    repeats = 1
+    score_threshold = 0.60
+    iou_threshold = 0.95
+    max_output_boxes = 10
+
+    bbox = _bbox.copy()
+    scores = _scores.copy()
+
+    bbox[:, [1, 3]] /= image_width
+    bbox[:, [0, 2]] /= image_height
+
+    # Shuffle bounding boxes
+    shuffle_idx = np.random.permutation(bbox.shape[0])
+    bbox = bbox[shuffle_idx]
+    scores = scores[shuffle_idx]
+
+    selected_boxes, selected_scores = repeated_nms(
+        bboxes=bbox,
+        scores=scores,
+        repeats=repeats,
+        score_threshold=score_threshold,
+        iou_threshold=iou_threshold,
+        max_output_boxes=max_output_boxes,
+    )
+
+    selected_boxes[:, [1, 3]] *= image_width
+    selected_boxes[:, [0, 2]] *= image_height
+
+    mask_width = (selected_boxes[:, 2] - selected_boxes[:, 0]) < 200
+    mask_height = (selected_boxes[:, 3] - selected_boxes[:, 1]) < 200
+    mask = (mask_width & mask_height).flatten()
+    selected_boxes = selected_boxes[mask, :]
+    selected_scores = selected_scores[mask]
+
+    # TODO: Retrain model so that we can remove this hack. 
+    #   Need to improve regression performance
+    selected_boxes[:, [1, 3]] -= 10
+
+    return selected_boxes, selected_scores
+
 
 if __name__ == '__main__':
     tf.random.set_seed(42)
@@ -50,53 +91,12 @@ if __name__ == '__main__':
     with open('scores', 'rb') as f:
         scores = pickle.load(f)
     
-    image = np.array(Image.open(f'./data/original-images/{image_no}.jpg'))
-    
     bbox = np.array(bbox)
     scores = np.array(scores)
+    image = np.array(Image.open(f'./data/original-images/{image_no}.jpg'))
     print(f"Possible Wallys: {bbox.shape}")
 
-    image = draw_boxes_on_image(image, bbox, scores, color=(0, 5, 5))
-    log_image(file_writer, f'{image_no}-result', image, 0)
-
-    # mask_width = (bbox[:, 2] - bbox[:, 0]) < 200
-    # mask_height = (bbox[:, 3] - bbox[:, 1]) < 200
-    # mask = (mask_width & mask_height).flatten()
-    # bbox = bbox[mask, :]
-    # scores = scores[mask]
-
-    repeats = 10
-    image = np.array(Image.open(f'./data/original-images/{image_no}.jpg'))
-
-    bbox[:, [1, 3]] /= image.shape[1]
-    bbox[:, [0, 2]] /= image.shape[0]
-
-    # Shuffle bounding boxes
-    shuffle_idx = np.random.permutation(bbox.shape[0])
-    bbox = bbox[shuffle_idx]
-    scores = scores[shuffle_idx]
-
-    selected_boxes, selected_scores = repeated_nms(
-        bboxes=bbox,
-        scores=scores,
-        repeats=1,
-        score_threshold=0.60,
-        iou_threshold=0.95,
-        max_output_boxes=10,
-    )
-
-    selected_boxes[:, [1, 3]] *= image.shape[1]
-    selected_boxes[:, [0, 2]] *= image.shape[0]
-
-    mask_width = (selected_boxes[:, 2] - selected_boxes[:, 0]) < 200
-    mask_height = (selected_boxes[:, 3] - selected_boxes[:, 1]) < 200
-    mask = (mask_width & mask_height).flatten()
-    selected_boxes = selected_boxes[mask, :]
-    selected_scores = selected_scores[mask]
-
-    # TODO: Retrain model so that we can remove this hack. 
-    #   Need to improve regression performance
-    selected_boxes[:, [1, 3]] -= 10
+    selected_boxes, selected_scores = inference_postprocessing(bbox, scores, image.shape[0], image.shape[1])
 
     print(f"Filtered Possible Wallys: {selected_boxes.shape}")
   
