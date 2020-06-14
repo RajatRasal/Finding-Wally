@@ -23,12 +23,14 @@ saved_model_path = './saved_model'
 memory_limit = 7000
 gpu_config(memory_limit)
 
+region_proposal_no = 2000
+
 logdir = f'./logs/results/{image_no}/{datetime.now().strftime("%Y%m%d-%H%M%S")}'
 file_writer = tf.summary.create_file_writer(logdir)
 
 image = np.array(Image.open(test_image_path))
 model = load_model(saved_model_path)
-test = inference_dataset_etl(csv_file_path, image_no, take=2000)
+test = inference_dataset_etl(csv_file_path, image_no, take=region_proposal_no)
 
 bbox = []
 scores = []
@@ -37,8 +39,8 @@ threshold = 0.5
 
 for i, (test_files, test_images) in enumerate(test):
     print(i)
-    offset, cls = predict_on_batch(test_images, model, threshold)
-    mask = np.argwhere(cls)
+    offset, cls = predict_on_batch(test_images, model)
+    mask = np.argwhere(cls > threshold)
     _, _x, _y, _w, _h = test_files
 
     for i, data in enumerate(zip(_x, _y, _w, _h)):
@@ -88,12 +90,17 @@ image2 = np.array(Image.open(f'./data/original-images/{image_no}.jpg'))
 bbox = np.array(bbox)
 scores = np.array(scores)
 
+print(bbox.shape)
+print(scores.shape)
+
+print(scores)
+
 bbox[:, [1, 3]] /= image2.shape[1]
 bbox[:, [0, 2]] /= image2.shape[0]
 selected_boxes, selected_scores = nms(
     bboxes=bbox,
     scores=scores,
-    score_threshold=0.8,
+    score_threshold=0.5,
     max_output_boxes=20
 )
 selected_boxes[:, [1, 3]] *= image2.shape[1]

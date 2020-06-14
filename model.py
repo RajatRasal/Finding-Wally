@@ -386,12 +386,18 @@ def predict(X, model, threshold=0.6):
     pred[pred < threshold] = 0
     return pred
 
-def predict_on_batch(X, model, threshold=0.5):
+def predict_on_batch(X, model, threshold=None):
     pred = model.predict_on_batch(X)
+
     offset = pred[0]
     cls = pred[1].flatten()
+
+    if threshold is None:
+        return offset, cls
+
     cls[cls >= threshold] = 1
     cls[cls < threshold] = 0
+
     return offset, cls 
 
 def save_model(model, saved_model_path):
