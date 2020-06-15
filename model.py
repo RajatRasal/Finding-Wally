@@ -279,8 +279,8 @@ def build_model():
     base_input, backbone = vgg16_backbone(retrain_from=9)
 
     # Combine backbone and my outputs to form the NN pipeline
-    fc1 = Dense(300, activation='relu', name='additional_fc1',
-        activity_regularizer=l1(0.001))(backbone)
+    fc1 = Dense(150, activation='relu', name='additional_fc1')(backbone)
+    # activity_regularizer=l1(0.001))(backbone)
     do1 = Dropout(0.5, seed=41)(fc1)
     """
     fc2 = Dense(100, activation='relu', name='additional_fc2',
@@ -379,6 +379,31 @@ def build_and_compile_distributed_model(strategy):
 ###############################################################################
 # Inference
 ###############################################################################
+
+def apply_offset(y, x, y2, x2, t_x, t_y, t_w, t_h):
+    x = tf.cast(x, tf.float32)
+    y = tf.cast(y, tf.float32)
+    x2 = tf.cast(x2, tf.float32)
+    y2 = tf.cast(y2, tf.float32)
+    # Calculate dimensions
+    w = x2 - x
+    h = y2 - y
+    # Find center
+    x_center = x + (w / 2.0)
+    y_center = y + (h / 2.0)
+    # Apply offset
+    x_center += w * t_x  # offset[i, 0]
+    y_center += h * t_y  # offset[i, 1]
+    _w = np.exp(t_w) * w  # offset[i, 2]
+    _h = np.exp(t_h) * h  # offset[i, 3]
+    # Unapply centering
+    half_width = _w / 2.0
+    half_height = _h / 2.0
+    y1 = y_center - half_height
+    x1 = x_center - half_width
+    y2 = y_center + half_height
+    x2 = x_center + half_width
+    return y1, x1, y2, x2
 
 def predict(X, model, threshold=0.6):
     pred = model.predict(X)

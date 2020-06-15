@@ -36,11 +36,10 @@ def repeated_nms(bboxes, scores, repeats, **kwargs):
         _bboxes, _scores = nms(_bboxes, _scores, **kwargs)
     return _bboxes, _scores
 
-def inference_postprocessing(_bbox, _scores, image_height, image_width):
+def inference_postprocessing(_bbox, _scores, image_height, image_width,
+    max_output_boxes=40, score_threshold=0.5, iou_threshold=0.95
+):
     repeats = 1
-    score_threshold = 0.60
-    iou_threshold = 0.95
-    max_output_boxes = 10
 
     bbox = _bbox.copy()
     scores = _scores.copy()

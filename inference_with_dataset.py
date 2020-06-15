@@ -11,7 +11,7 @@ from tensorflow.keras.applications import vgg16
 
 from log import log_image, draw_box_on_image, draw_boxes_on_image
 from model import (load_model, inference_dataset_etl, predict_on_batch,
-    gpu_config
+    gpu_config, apply_offset
 )
 from nms import inference_postprocessing
 
@@ -28,6 +28,7 @@ parser.add_argument('-m', '--model', help='Saved model')
 parser.add_argument('-r', '--region-proposals', type=int,
     help='Number of region proposals'
 )
+parser.add_argument('-l', '--logdir', help='Tensorboard logging directory')
 args = parser.parse_args()
 
 image_no = args.image_no
@@ -36,12 +37,17 @@ csv_file_path = args.file
 saved_model_path = args.model
 region_proposal_no = args.region_proposals
 threshold = args.pred_threshold 
+logdir = args.logdir
 
 test_image_path = f'./data/original-images/{image_no}.jpg'
 
 gpu_config(memory_limit)
 
-logdir = f'./logs/results/{image_no}/{datetime.now().strftime("%Y%m%d-%H%M%S")}'
+if not logdir:
+    timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
+    logdir = f'./logs/results/{image_no}/{timestamp}'
+else:
+    logdir = f'./logs/results/{logdir}'
 file_writer = tf.summary.create_file_writer(logdir)
 
 image = np.array(Image.open(test_image_path))
@@ -56,39 +62,16 @@ for i, (test_files, test_images) in enumerate(test):
     offset, cls = predict_on_batch(test_images, model)
     mask = np.argwhere(cls > threshold)
     _, _x, _y, _w, _h = test_files
-
     for i, data in enumerate(zip(_x, _y, _w, _h)):
         if i not in mask:
             continue
-
-        # Cast original bbox coordinates
-        x, y, w, h = data
-        x = tf.cast(x, tf.float32)
-        y = tf.cast(y, tf.float32)
-        w = tf.cast(w, tf.float32)
-        h = tf.cast(h, tf.float32)
-        # Draw original bounding box
-        # image = draw_box_on_image(image, (y, x, y + h, x + w))
-
-        # Find center
-        x_center = x + (w / 2.0)
-        y_center = y + (h / 2.0)
-        # Apply offset
-        x_center += w * offset[i, 0]
-        y_center += h * offset[i, 1]
-        _w = np.exp(offset[i, 2]) * w
-        _h = np.exp(offset[i, 3]) * h
-        # Unapply offsets
-        half_width = _w / 2.0
-        half_height = _h / 2.0
-        y1 = y_center - half_height
-        x1 = x_center - half_width
-        y2 = y_center + half_height
-        x2 = x_center + half_width
-        # Draw tigher bounding box
-        # image = draw_box_on_image(image, (y1, x1, y2, x2), color=(0, 225, 225))
-
-        bbox.append([y1, x1, y2, x2])
+        x1, y1, w, h = data
+        y2 = y1 + h
+        x2 = x1 + w
+        data = (y1, x1, y2, x2)
+        _offset = offset[i]
+        y1_new, x1_new, y2_new, x2_new = apply_offset(*data, *_offset)
+        bbox.append([y1_new, x1_new, y2_new, x2_new])
         scores.append(cls[i])
 
 with open('bboxes', 'wb') as f:
@@ -97,18 +80,18 @@ with open('bboxes', 'wb') as f:
 with open('scores', 'wb') as f:
     pickle.dump(scores, f)
 
-log_image(file_writer, f'{image_no}-result', image, 0)
-
 bbox = np.array(bbox)
 scores = np.array(scores)
 
-print(f"Possible Wallys: {bbox.shape}")
+print(f"Possible Wallys: {bbox.shape}, score: {scores.shape}")
 
 selected_boxes, selected_scores = inference_postprocessing(
     _bbox=bbox,
     _scores=scores,
     image_height=image.shape[0],
-    image_width=image.shape[1]
+    image_width=image.shape[1],
+    max_output_boxes=200,
+    score_threshold=0.5
 )
 
 print(f"Filtered Possible Wallys: {selected_boxes.shape}")
@@ -118,30 +101,7 @@ image = draw_boxes_on_image(
     bboxes=selected_boxes,
     scores=selected_scores,
     color=(0, 5, 5),
-    box_thickness=1
-)
-log_image(file_writer, f'{image_no}-result', image, 1)
-
-"""
-bbox[:, [1, 3]] /= image2.shape[1]
-bbox[:, [0, 2]] /= image2.shape[0]
-selected_boxes, selected_scores = nms(
-    bboxes=bbox,
-    scores=scores,
-    score_threshold=0.5,
-    max_output_boxes=20
-)
-selected_boxes[:, [1, 3]] *= image2.shape[1]
-selected_boxes[:, [0, 2]] *= image2.shape[0]
-
-assert selected_boxes.shape[0] == selected_scores.shape[0]
-
-image2 = draw_boxes_on_image(
-    image=image2,
-    bboxes=selected_boxes,
-    scores=selected_scores,
-    color=(0, 5, 5)
+    box_thickness=3
 )
 
-log_image(file_writer, f'{image_no}-result', image2, 1)
-"""
+log_image(file_writer, f'{image_no}-result', image, 0)
