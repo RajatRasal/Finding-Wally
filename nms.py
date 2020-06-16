@@ -37,9 +37,9 @@ def repeated_nms(bboxes, scores, repeats, **kwargs):
     return _bboxes, _scores
 
 def inference_postprocessing(_bbox, _scores, image_height, image_width,
-    max_output_boxes=40, score_threshold=0.5, iou_threshold=0.95
+    max_output_boxes=40, score_threshold=0.5, iou_threshold=0.95, nms_repeats=1
 ):
-    repeats = 1
+    repeats = nms_repeats
 
     bbox = _bbox.copy()
     scores = _scores.copy()
