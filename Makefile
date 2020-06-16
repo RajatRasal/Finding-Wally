@@ -23,6 +23,7 @@ train: ./saved_model
 	  -i ${test_images} \
 	  -g ${gpu_memory} \
 	  -l logs/train/ \
+	  -e 500 \
 	  -o ./saved_model \
 	  -t local
 
@@ -49,8 +50,8 @@ test_out:
 	  -m ./saved_model \
 	  -t out
 
-infer:
-	python inference.py
+test_with_datasets:
+	./inference_test.sh "${test_images}"
 
 tensorboard_train:
 	tensorboard --logdir ./logs/train --port=8080
