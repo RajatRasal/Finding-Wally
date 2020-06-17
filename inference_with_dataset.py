@@ -16,6 +16,8 @@ from model import (load_model, inference_dataset_etl, predict_on_batch,
 from nms import inference_postprocessing
 
 
+COLORS = {'red': (139, 0, 0), 'black': (0, 0, 0), 'blue': (32, 178, 170)}
+
 description = 'Inference Options'
 parser = argparse.ArgumentParser(description=description)
 parser.add_argument('-f', '--file', help='CSV Dataset')
@@ -29,8 +31,12 @@ parser.add_argument('-r', '--region-proposals', type=int,
     help='Number of region proposals'
 )
 parser.add_argument('-l', '--logdir', help='Tensorboard logging directory')
-args = parser.parse_args()
+parser.add_argument('-b', '--bounding-boxes', type=int,
+    help='No. of bounding boxes'
+)
+parser.add_argument('-c', '--color', help='Bounding Box Colors')
 
+args = parser.parse_args()
 image_no = args.image_no
 memory_limit = args.gpu
 csv_file_path = args.file
@@ -38,6 +44,8 @@ saved_model_path = args.model
 region_proposal_no = args.region_proposals
 threshold = args.pred_threshold 
 logdir = args.logdir
+max_output_boxes = args.bounding_boxes
+color = COLORS[args.color]
 
 test_image_path = f'./data/original-images/{image_no}.jpg'
 
@@ -58,7 +66,7 @@ bbox = []
 scores = []
 
 for i, (test_files, test_images) in enumerate(test):
-    print(i)
+    print('Batch:', i)
     offset, cls = predict_on_batch(test_images, model)
     mask = np.argwhere(cls > threshold)
     _, _x, _y, _w, _h = test_files
@@ -90,8 +98,10 @@ selected_boxes, selected_scores = inference_postprocessing(
     _scores=scores,
     image_height=image.shape[0],
     image_width=image.shape[1],
-    max_output_boxes=200,
-    score_threshold=0.5
+    max_output_boxes=max_output_boxes,
+    score_threshold=0.5,
+    iou_threshold=0.5,
+    nms_repeats=5
 )
 
 print(f"Filtered Possible Wallys: {selected_boxes.shape}")
@@ -100,7 +110,7 @@ image = draw_boxes_on_image(
     image=image,
     bboxes=selected_boxes,
     scores=selected_scores,
-    color=(0, 5, 5),
+    color=color,  # (0, 5, 5),
     box_thickness=3
 )
 

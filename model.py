@@ -71,8 +71,8 @@ def __split_tf_data_by_images(data, test_images, image_col='image_no'):
     )
     return train, test
 
-def preprocess_dataset(dataset, repeat=1):
-    BATCH_SIZE = 64
+def preprocess_dataset(dataset, repeat=1, batch_size=64):
+    BATCH_SIZE = batch_size
     BUFFER_SIZE = BATCH_SIZE * 3
     SEED = 42
     TP_BATCH_FACTOR = 0.25
@@ -310,11 +310,11 @@ def rcnn_cls_loss(y_true, y_pred):
     cls_true = y_true[:, 4:]
     cls_pred = kb.clip(cls_pred, kb.epsilon(), 1 - kb.epsilon())
     cls_true = kb.clip(cls_true, kb.epsilon(), 1 - kb.epsilon())
-    weighted_bce_loss = losses.BinaryCrossentropy()(cls_true, cls_pred)
-    # weighted_bce_loss = -(0.25 * cls_true * kb.log(cls_pred) + \
-    #     0.75 * (1 - cls_true) * kb.log(1 - cls_pred)
-    # )
-    return weighted_bce_loss
+    bce_loss = losses.BinaryCrossentropy(
+        reduction=tf.keras.losses.Reduction.SUM
+    )
+    bce_loss = bce_loss(cls_true, cls_pred)
+    return bce_loss
 
 ###############################################################################
 # Training Loop Metrics
@@ -447,25 +447,3 @@ def load_model(saved_model_path, _compile=True, lr=None):
         kb.set_value(model.optimizer.lr, lr)
 
     return model
-
-
-if __name__ == '__main__':
-    CSV_FILE_PATH = './data/data.csv'
-    TEST_IMAGES = [19, 31, 49, 20, 56, 21]
-
-    train, test = load_and_split_csv_dataset(CSV_FILE_PATH, TEST_IMAGES, reader='tf')
-
-    # t1 = len(list(test.as_numpy_iterator()))
-    # print(t1)
-    # t2 = len(list(train.as_numpy_iterator()))
-    # print(t2)
-    # assert t1 == 160312 
-    # assert t2 == 1391841
-    train = preprocess_dataset(train)
-
-    for i, (X, y) in enumerate(train):
-        print(f'----------------- {i} ------------------')
-        # *offset, label = y
-        print(y[:, :4])
-        # print(offset, label)
-        # print(y)

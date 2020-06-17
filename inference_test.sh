@@ -13,6 +13,8 @@ do
     -r 2000 \
     -t 0.5 \
     -m ./saved_model \
+    -c black \
+    -b 50 \
     -l $dt 2> /tmp/null
 done
 

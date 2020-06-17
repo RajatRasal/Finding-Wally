@@ -1,17 +1,21 @@
 test_images = 31 49 20 56 21
 gpu_memory  = 7000
+epochs = 1000
+retrain_epochs = 100
 
 train_dist: ./saved_model_dist
 
 ./saved_model_dist: train.py model.py ./data/data.csv dist_config.json
 	python train.py \
+	  -t dist \
+	  -d dist_config.json \
 	  -f ./data/data.csv \
 	  -i ${test_images} \
 	  -g ${gpu_memory} \
-	  -l logs/train/ \
-	  -o ./saved_model \
-	  -t dist \
-	  -d dist_config.json
+	  -e 1 \
+	  -b 64 \
+	  -l ./logs/train/ \
+	  -o ./saved_model_dist
 
 train_cycle: train retrain retrain retrain retrain retrain
 
@@ -19,22 +23,23 @@ train: ./saved_model
 
 ./saved_model: train.py model.py ./data/data.csv
 	python train.py \
+	  -t local \
 	  -f ./data/data.csv \
 	  -i ${test_images} \
 	  -g ${gpu_memory} \
-	  -l logs/train/ \
-	  -e 500 \
-	  -o ./saved_model \
-	  -t local
+	  -e ${epochs} \
+	  -l ./logs/train/ \
+	  -o ./saved_model
 
 retrain:
 	python train.py \
+	  -t retrain \
 	  -f ./data/data.csv \
 	  -i ${test_images} \
 	  -g ${gpu_memory} \
-	  -l logs/train/ \
-	  -o ./saved_model \
-	  -t retrain
+	  -e ${retrain_epochs} \
+	  -l ./logs/train/ \
+	  -o ./saved_model
 
 test_in:
 	python metrics.py \
